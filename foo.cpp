@@ -1,6 +1,8 @@
 #include <cuda_runtime_api.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <exception> // New: Include C++ exception header
+#include <string>    // New: For building the error message
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,9 +16,15 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     err = cudaMalloc(&ptr, size);
 
     if (err != cudaSuccess) {
-        // Use standard C error output
-        fprintf(stderr, "CUDA Malloc Failed: %s\n", cudaGetErrorString(err));
-        return NULL; // Return NULL on failure as per allocator contract
+        // Build an error message string
+        std::string err_msg = "CUDA C++ Malloc Failed: ";
+        err_msg += cudaGetErrorString(err);
+
+        // 1. Use standard C error output (kept per request)
+        fprintf(stderr, "%s\n", err_msg.c_str());
+
+        // 2. Throw std::exception instead of returning NULL
+        throw std::exception(err_msg.c_str());
     }
 
     printf("Custom Alloc: ptr=%p, size=%td, device=%d\n", ptr, size, device);
