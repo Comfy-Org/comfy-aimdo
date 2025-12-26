@@ -43,7 +43,13 @@ jobs:
             # 4. (Optional) Set paths if your build script doesn't find them automatically
             ln -s /usr/local/cuda-12.1 /usr/local/cuda
 
-          CIBW_BEFORE_BUILD_LINUX: "gcc -shared -o {package}/aimdo/libvbar.so -fPIC -I/usr/local/cuda/include -Isrc -L/usr/local/cuda/lib64/stubs -lcuda src/aimdo.c"
+          CIBW_BEFORE_BUILD_LINUX: |
+            gcc -shared -o {package}/aimdo/libvbar.so -fPIC \
+            -I/usr/local/cuda/include \
+            -Isrc \
+            -L/usr/local/cuda/lib64/stubs \
+            -L/usr/local/cuda/lib64 \
+            -lcuda src/aimdo.c
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"
           CIBW_BUILD: cp39-manylinux_x86_64
 
