@@ -1,4 +1,0 @@
-#!/bin/bash -e
-
-gcc -c -fPIC -I/usr/local/cuda/include foo.c
-gcc -shared foo.o -o foo.so -L/usr/local/cuda/lib64 -lcuda -lcudart
