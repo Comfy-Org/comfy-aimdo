@@ -8,11 +8,9 @@ version = "0.0.1"
 dependencies = ["torch>=2.6.0"]
 
 [tool.setuptools]
-zip-safe = false
-include-package-data = true
+ext-modules = [
+    { name = "aimdo._libvbar", sources = [] }
+]
 
 [tool.setuptools.package-data]
 "aimdo" = ["*.so", "*.dll"]
-
-[tool.setuptools.dist-info]
-tag-platform = "linux_x86_64"
