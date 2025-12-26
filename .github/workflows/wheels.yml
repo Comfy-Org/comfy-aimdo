@@ -3,13 +3,11 @@ name: Build Wheels
 on:
   push:
     branches: [ master ]
-    tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,22 +16,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install CUDA (Windows)
+        if: runner.os == 'Windows'
+        uses: Jimver/cuda-toolkit@v0.2.15
+        with:
+          cuda: '12.1.1' # Just for headers/libs; binary remains compatible back to 11.x
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
         env:
-          # Use a newer manylinux image for better compatibility
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          
-          # Linux build
-          CIBW_BEFORE_BUILD_LINUX: "gcc -shared -o {package}/aimdo/libvbar.so -fPIC src/aimdo.c"
-          
-          # Windows build
-          CIBW_BEFORE_BUILD_WINDOWS: "cl.exe /LD src/aimdo.c /Fe:{package}/aimdo/libvbar.dll"
-          
-          # CRITICAL: Skip the versions that usually cause the 'pip' hang in CI
+          # Use CUDA-ready image for Linux
+          CIBW_MANYLINUX_X86_64_IMAGE: nvidia/cuda:12.1.1-devel-centos7
+
+          # LINUX: Link against stubs, exclude from auditwheel
+          CIBW_BEFORE_BUILD_LINUX: "gcc -shared -o {package}/aimdo/libvbar.so -fPIC -I/usr/local/cuda/include -Isrc -L/usr/local/cuda/lib64/stubs -lcuda src/aimdo.c"
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"
+
+          # WINDOWS: Link against cuda.lib
+          CIBW_BEFORE_BUILD_WINDOWS: "cl.exe /LD /I\"%CUDA_PATH%\\include\" /Isrc src/aimdo.c /link /LIBPATH:\"%CUDA_PATH%\\lib\\x64\" cuda.lib /OUT:{package}/aimdo/libvbar.dll"
+
           CIBW_SKIP: "*-win32 *_i686 *-musllinux_* cp36-* cp37-* cp38-*"
-          
-          # Increase verbosity so we can see exactly where it hangs if it happens again
           CIBW_BUILD_VERBOSITY: 1
 
       - uses: actions/upload-artifact@v4
