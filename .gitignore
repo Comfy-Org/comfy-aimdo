@@ -4,3 +4,7 @@
 *.o
 *.exp
 *.lib
+build/
+dist/
+*.egg-info/
+.venv/
