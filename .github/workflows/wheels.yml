@@ -26,13 +26,15 @@ jobs:
           curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/network_installers/cuda_12.1.1_windows_network.exe
           ./cuda_installer.exe -s nvcc_12.1 cudart_12.1 -log:"$PWD" -loglevel:6
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1"
-          echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
-          echo "$cudaPath\bin" >> $env:GITHUB_PATH
-        shell: pwsh
-
-      - name: Show CUDA Install Log
-        if: always() && runner.os == 'Windows' # Runs even if the previous step failed
-        run: Get-Content cuda_install.log
+          if (Test-Path "$cudaPath\bin\nvcc.exe") {
+            echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
+            echo "$cudaPath\bin" >> $env:GITHUB_PATH
+            Write-Host "Success: NVCC found at $cudaPath"
+          } else {
+            Write-Error "CUDA installation failed - NVCC not found at $cudaPath"
+            Get-Content cuda_install.log
+            exit 1
+          }
         shell: pwsh
 
       - name: Build wheels
