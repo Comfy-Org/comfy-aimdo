@@ -20,13 +20,20 @@ jobs:
         if: runner.os == 'Linux'
         run: docker build -t custom-cuda-builder -f docker/cuda-on-manylinux.Dockerfile .
 
-      - name: Install CUDA (Windows)
+      - name: Install Minimal CUDA (No Hangs)
         if: runner.os == 'Windows'
-        uses: Jimver/cuda-toolkit@v0.2.15
-        with:
-          cuda: '12.1.1' # Just for headers/libs; binary remains compatible back to 11.x
-          use-github-cache: false
-          use-local-cache: false
+        run: |
+          curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/network_installers/cuda_12.1.1_windows_network.exe
+          ./cuda_installer.exe -s nvcc_12.1 cudart_12.1
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1"
+          echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
+          echo "$cudaPath\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Show CUDA Install Log
+        if: always() # Runs even if the previous step failed
+        run: Get-Content cuda_install.log
+        shell: pwsh
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
