@@ -26,34 +26,36 @@ jobs:
           # 1. Download
           curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/local_installers/cuda_12.1.1_531.14_windows.exe
           
-          # 2. Extract EVERYTHING (No filters this time to ensure we catch the nested layers)
-          # -y: Auto-answer yes
-          # -otemp_cuda: Output dir (No space)
+          # 2. Extract
           7z x cuda_installer.exe -otemp_cuda -y
           
-          # 3. Setup Target Directory
+          # 3. Setup Target
           $target = "C:\CUDA"
-          if (!(Test-Path $target)) { mkdir $target }
           mkdir "$target\bin", "$target\include", "$target\lib\x64" -Force
           
-          # 4. Smart Find & Move 
-          # We look for the main files and copy their entire folders to the right spot
-          Write-Host "Locating files..."
-          Get-ChildItem -Path temp_cuda -Recurse -Filter "nvcc.exe" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\bin" }
-          Get-ChildItem -Path temp_cuda -Recurse -Filter "cudart.lib" | Select-Object -First 1 | ForEach-Object { copy $_.FullName "$target\lib\x64" }
-          Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\include" }
+          # 4. Corrected Copy Logic
+          Write-Host "Locating and moving files..."
+          # Find nvcc.exe and copy its folder to bin
+          $nvccFile = Get-ChildItem -Path temp_cuda -Recurse -Filter "nvcc.exe" | Select-Object -First 1
+          if ($nvccFile) { Copy-Item -Path "$($nvccFile.DirectoryName)\*" -Destination "$target\bin" -Recurse -Force }
+
+          # Find cudart.lib and copy to lib/x64
+          $rtLib = Get-ChildItem -Path temp_cuda -Recurse -Filter "cudart.lib" | Select-Object -First 1
+          if ($rtLib) { Copy-Item -Path $rtLib.FullName -Destination "$target\lib\x64" -Force }
+
+          # Find cuda.h and copy its folder to include
+          $header = Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1
+          if ($header) { Copy-Item -Path "$($header.DirectoryName)\*" -Destination "$target\include" -Recurse -Force }
           
           # 5. Environment
           echo "CUDA_PATH=$target" >> $env:GITHUB_ENV
           echo "$target\bin" >> $env:GITHUB_PATH
           
-          # 6. Final verification
+          # 6. Verification
           if (Test-Path "$target\bin\nvcc.exe") {
-             Write-Host "Success! NVCC is ready."
              & "$target\bin\nvcc.exe" --version
           } else {
-             Write-Error "Still couldn't find nvcc.exe. Listing all extracted files for debug:"
-             Get-ChildItem -Path temp_cuda -Recurse | Select-Object FullName
+             Write-Error "Failed to move files to $target"
              exit 1
           }
         shell: pwsh
