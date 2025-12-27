@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/network_installers/cuda_12.1.1_windows_network.exe
-          ./cuda_installer.exe -s nvcc_12.1 cudart_12.1
+          ./cuda_installer.exe -s nvcc_12.1 cudart_12.1 -log:"$PWD" -loglevel:6
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1"
           echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
           echo "$cudaPath\bin" >> $env:GITHUB_PATH
