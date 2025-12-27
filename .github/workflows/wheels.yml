@@ -20,20 +20,37 @@ jobs:
         if: runner.os == 'Linux'
         run: docker build -t custom-cuda-builder -f docker/cuda-on-manylinux.Dockerfile .
 
-      - name: Install Minimal CUDA (Windows)
+      - name: Manual CUDA Extraction (Windows)
         if: runner.os == 'Windows'
         run: |
+          # 1. Download
           curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/local_installers/cuda_12.1.1_531.14_windows.exe
-          ./cuda_installer.exe -s -override nvcc_12.1 cudart_12.1 -log:"$PWD" -loglevel:6
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1"
-          if (Test-Path "$cudaPath\bin\nvcc.exe") {
-            echo "CUDA_PATH=$cudaPath" >> $env:GITHUB_ENV
-            echo "$cudaPath\bin" >> $env:GITHUB_PATH
-            Write-Host "Success: NVCC found at $cudaPath"
+          
+          # 2. Extract using 7z (Note: NO space after -o)
+          # We only pull the folders we need to save disk space/time
+          7z x cuda_installer.exe -otemp_cuda nvcc/* CUDART/* CUDA_Development/* -y
+          
+          # 3. Setup Target
+          $target = "C:\CUDA"
+          mkdir "$target\bin", "$target\include", "$target\lib\x64" -Force
+          
+          # 4. Use 'Find' logic to move files regardless of nested structure
+          Get-ChildItem -Path temp_cuda -Recurse -Filter "nvcc.exe" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\bin" }
+          Get-ChildItem -Path temp_cuda -Recurse -Filter "cudart.lib" | Select-Object -First 1 | ForEach-Object { copy $_.FullName "$target\lib\x64" }
+          Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\include" }
+          
+          # 5. Environment
+          echo "CUDA_PATH=$target" >> $env:GITHUB_ENV
+          echo "$target\bin" >> $env:GITHUB_PATH
+          
+          # 6. Final verification
+          if (Test-Path "$target\bin\nvcc.exe") {
+             Write-Host "--- NVCC VERIFICATION ---"
+             & "$target\bin\nvcc.exe" --version
           } else {
-            Write-Error "CUDA installation failed - NVCC not found at $cudaPath"
-            Get-Content cuda_install.log
-            exit 1
+             Write-Error "Could not find nvcc.exe in extracted files."
+             dir temp_cuda -Recurse # Show the tree so we can find it
+             exit 1
           }
         shell: pwsh
 
