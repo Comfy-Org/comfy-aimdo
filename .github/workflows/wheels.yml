@@ -20,6 +20,7 @@ jobs:
         if: runner.os == 'Linux'
         run: docker build -t custom-cuda-builder -f docker/cuda-on-manylinux.Dockerfile .
 
+      #This is batshit crazy
       - name: Manual CUDA Extraction (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -33,32 +34,32 @@ jobs:
           $target = "C:\CUDA"
           mkdir "$target\bin", "$target\include", "$target\lib\x64" -Force
           
-          # 4. Corrected Copy Logic
-          Write-Host "Locating and moving files..."
-          # Find nvcc.exe and copy its folder to bin
+          # 4. Moving files with directory structure preserved
+          # Find the actual headers root (where cuda.h and the 'crt' folder live)
+          $headerRoot = Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1 | ForEach-Object { $_.DirectoryName }
+          if ($headerRoot) { Copy-Item -Path "$headerRoot\*" -Destination "$target\include" -Recurse -Force }
+
+          # Find and move bin/nvcc.exe
           $nvccFile = Get-ChildItem -Path temp_cuda -Recurse -Filter "nvcc.exe" | Select-Object -First 1
           if ($nvccFile) { Copy-Item -Path "$($nvccFile.DirectoryName)\*" -Destination "$target\bin" -Recurse -Force }
 
-          # Find cudart.lib and copy to lib/x64
+          # Find and move lib/cudart.lib
           $rtLib = Get-ChildItem -Path temp_cuda -Recurse -Filter "cudart.lib" | Select-Object -First 1
           if ($rtLib) { Copy-Item -Path $rtLib.FullName -Destination "$target\lib\x64" -Force }
-
-          # Find cuda.h and copy its folder to include
-          $header = Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1
-          if ($header) { Copy-Item -Path "$($header.DirectoryName)\*" -Destination "$target\include" -Recurse -Force }
           
           # 5. Environment
           echo "CUDA_PATH=$target" >> $env:GITHUB_ENV
           echo "$target\bin" >> $env:GITHUB_PATH
           
-          # 6. Verification
-          if (Test-Path "$target\bin\nvcc.exe") {
-             & "$target\bin\nvcc.exe" --version
+          # 6. Verify subfolders
+          if (Test-Path "$target\include\crt\host_defines.h") {
+             Write-Host "Success: CRT headers found."
           } else {
-             Write-Error "Failed to move files to $target"
+             Write-Error "CRT headers missing from $target\include\crt"
              exit 1
           }
         shell: pwsh
+
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
