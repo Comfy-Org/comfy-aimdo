@@ -5,6 +5,8 @@
 
 #include "plat.h"
 
+void aimdo_vbars_free(size_t size);
+
 #define MIN_ALLOC_SHIFT 21
 #define MIN_ALLOC       (1 << MIN_ALLOC_SHIFT) /*2 MB as per Cuda page sizes and pytorch cacheing alloc */
 
@@ -81,16 +83,25 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
 
         /* FIXME: failure unwind chain all of this */
         if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0)) ||
+            /* FIXME: Think about looping this by chunk. Ideally we want to consume
+             * what we can from cuda before we OOM so that the VBAR free routine
+             * doesn't over-free
+             */
             !CHECK_CU(err = cuMemCreate(&entry->handle, size, &prop, 0)) ||
             !CHECK_CU(err = cuMemMap(&entry->ptr, size, 0, entry->handle, 0)) ||
             !(mmap_done = true) ||
             !CHECK_CU(err = cuMemSetAccess(entry->ptr, size, &accessDesc, 1))) {
-            if (err == CUDA_ERROR_OUT_OF_MEMORY) {
-                fprintf(stderr, "DEBUG: OOMED\n");
-            }
 
-            do_free(&entry, mmap_done);
-            return NULL;
+            if (err != CUDA_ERROR_OUT_OF_MEMORY) {
+                do_free(&entry, mmap_done);
+                return NULL;
+            }
+            fprintf(stderr, "DEBUG: OOMED\n");
+            aimdo_vbars_free(size);
+            if (!CHECK_CU(err = cuMemSetAccess(entry->ptr, size, &accessDesc, 1))) {
+                do_free(&entry, mmap_done);
+                return NULL;
+            }
         }
     }
 
@@ -100,7 +111,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         vmm_table[h] = entry;
     }
 
-    printf("FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", ptr, size, device, (unsigned long long)alloc_handle);
+    printf("FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", entry->ptr, size, device, (unsigned long long)alloc_handle);
     return (void *)entry->ptr;
 }
 
