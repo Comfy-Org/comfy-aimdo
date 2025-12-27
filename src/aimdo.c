@@ -11,7 +11,7 @@
 #define VMM_HASH_SIZE   (1 << 12) 
 
 typedef struct VMMEntry {
-    void* ptr;
+    CUdeviceptr ptr;
     CUmemGenericAllocationHandle handle;
     size_t size;
     struct VMMEntry* next;
@@ -36,10 +36,34 @@ static int check_cu_impl(CUresult res, const char *label) {
 }
 #define CHECK_CU(x) check_cu_impl((x), #x)
 
+static inline void do_free(VMMEntry **p, bool mmap_done) {
+    VMMEntry *entry = *p;
+
+    if (mmap_done) {
+        CHECK_CU(cuMemUnmap(entry->ptr, entry->size));
+    }
+    if (entry->handle) {
+        cuMemRelease(entry->handle);
+    }
+    if (entry->ptr) {
+        cuMemAddressFree(entry->ptr, entry->size);
+    }
+
+    *p = entry->next;
+    free(entry);
+}
+
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
-    CUmemGenericAllocationHandle alloc_handle = 0;
-    void *ptr = NULL;
+    bool mmap_done = false;
+    VMMEntry* entry = calloc(1, sizeof(*entry));
+
+    if (!entry) {
+        fprintf(stderr, "FATAL: Host OOM\n");
+        return NULL;
+    }
+
+    entry->size = size;
 
     {
         CUresult err;
@@ -56,36 +80,28 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         };
 
         /* FIXME: failure unwind chain all of this */
-        if (!CHECK_CU(err = cuMemAddressReserve((CUdeviceptr*)&ptr, size, 0, 0, 0)) || 
-            !CHECK_CU(err = cuMemCreate(&alloc_handle, size, &prop, 0)) ||
-            !CHECK_CU(err = cuMemMap((CUdeviceptr)ptr, size, 0, alloc_handle, 0)) ||
-            !CHECK_CU(err = cuMemSetAccess((CUdeviceptr)ptr, size, &accessDesc, 1))) {
+        if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0)) ||
+            !CHECK_CU(err = cuMemCreate(&entry->handle, size, &prop, 0)) ||
+            !CHECK_CU(err = cuMemMap(&entry->ptr, size, 0, entry->handle, 0)) ||
+            !(mmap_done = true) ||
+            !CHECK_CU(err = cuMemSetAccess(entry->ptr, size, &accessDesc, 1))) {
             if (err == CUDA_ERROR_OUT_OF_MEMORY) {
                 fprintf(stderr, "DEBUG: OOMED\n");
             }
+
+            do_free(&entry, mmap_done);
             return NULL;
         }
     }
 
     {
         unsigned int h = vmm_hash(ptr);
-        VMMEntry* entry = malloc(sizeof(VMMEntry));
-
-        if (entry == NULL) {
-            fprintf(stderr, "FATAL: Host OOM\n");
-            return NULL;
-        }
-        *entry = (VMMEntry) {
-            .ptr = ptr,
-            .handle = alloc_handle,
-            .size = size,
-            .next = vmm_table[h],
-        };
+        entry->next = vmm_table[h];
         vmm_table[h] = entry;
     }
 
     printf("FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", ptr, size, device, (unsigned long long)alloc_handle);
-    return ptr;
+    return (void *)entry->ptr;
 }
 
 SHARED_EXPORT
@@ -100,12 +116,7 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
             continue;
         }
 
-        CHECK_CU(cuMemUnmap((CUdeviceptr)ptr, entry->size));
-        CHECK_CU(cuMemRelease(entry->handle));
-        CHECK_CU(cuMemAddressFree((CUdeviceptr)ptr, entry->size));
-
-        *curr = entry->next;
-        free(entry);
+        do_free(curr, true);
         printf("Custom Free: ptr=%p, size=%zu, stream=%p\n", ptr, size, stream);
         return;
     }
