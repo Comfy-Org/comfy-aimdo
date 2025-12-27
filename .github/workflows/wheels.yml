@@ -26,15 +26,19 @@ jobs:
           # 1. Download
           curl.exe -Lo cuda_installer.exe https://developer.download.nvidia.com/compute/cuda/12.1.1/local_installers/cuda_12.1.1_531.14_windows.exe
           
-          # 2. Extract using 7z (Note: NO space after -o)
-          # We only pull the folders we need to save disk space/time
-          7z x cuda_installer.exe -otemp_cuda nvcc/* CUDART/* CUDA_Development/* -y
+          # 2. Extract EVERYTHING (No filters this time to ensure we catch the nested layers)
+          # -y: Auto-answer yes
+          # -otemp_cuda: Output dir (No space)
+          7z x cuda_installer.exe -otemp_cuda -y
           
-          # 3. Setup Target
+          # 3. Setup Target Directory
           $target = "C:\CUDA"
+          if (!(Test-Path $target)) { mkdir $target }
           mkdir "$target\bin", "$target\include", "$target\lib\x64" -Force
           
-          # 4. Use 'Find' logic to move files regardless of nested structure
+          # 4. Smart Find & Move 
+          # We look for the main files and copy their entire folders to the right spot
+          Write-Host "Locating files..."
           Get-ChildItem -Path temp_cuda -Recurse -Filter "nvcc.exe" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\bin" }
           Get-ChildItem -Path temp_cuda -Recurse -Filter "cudart.lib" | Select-Object -First 1 | ForEach-Object { copy $_.FullName "$target\lib\x64" }
           Get-ChildItem -Path temp_cuda -Recurse -Filter "cuda.h" | Select-Object -First 1 | ForEach-Object { copy $_.DirectoryName\* "$target\include" }
@@ -45,11 +49,11 @@ jobs:
           
           # 6. Final verification
           if (Test-Path "$target\bin\nvcc.exe") {
-             Write-Host "--- NVCC VERIFICATION ---"
+             Write-Host "Success! NVCC is ready."
              & "$target\bin\nvcc.exe" --version
           } else {
-             Write-Error "Could not find nvcc.exe in extracted files."
-             dir temp_cuda -Recurse # Show the tree so we can find it
+             Write-Error "Still couldn't find nvcc.exe. Listing all extracted files for debug:"
+             Get-ChildItem -Path temp_cuda -Recurse | Select-Object FullName
              exit 1
           }
         shell: pwsh
