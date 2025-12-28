@@ -42,7 +42,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
             goto fail1;
         }
         fprintf(stderr, "DEBUG: OOMED\n");
-        aimdo_vbars_free(size);
+        vbars_free(size);
         if (three_stooges(entry->ptr, size, device, &entry->handle) != CUDA_SUCCESS) {
             goto fail1;
         }
@@ -70,9 +70,9 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
         return;
     }
 
-    for (VMMEntry **curr = &vmm_table[vmm_hash(ptr)]; *curr; curr = &(*curr)->next) {
+    for (VMMEntry **curr = &vmm_table[vmm_hash((CUdeviceptr)ptr)]; *curr; curr = &(*curr)->next) {
         VMMEntry *entry = *curr;
-        if (entry->ptr != ptr) {
+        if (entry->ptr != (CUdeviceptr)ptr) {
             continue;
         }
 

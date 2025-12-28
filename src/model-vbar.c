@@ -48,7 +48,7 @@ void vbars_free(size_t size) {
     for (ModelVBAR *i = lowest_priority.higher; pages_needed && i != &highest_priority;
          i = i->higher) {
         for (;pages_needed && i->watermark; i->watermark--) {
-            if (mod1(i, i->watermark - 1, true)) {
+            if (mod1(i, i->watermark - 1, true, false)) {
                 pages_needed--;
             }
         }
@@ -68,7 +68,7 @@ static void vbars_free_for_vbar(ModelVBAR *mv) {
     for (ModelVBAR *i = lowest_priority.higher; cursor < mv->watermark && i != &highest_priority;
          i = i->higher) {
         for (; cursor < mv->watermark && i->watermark; i->watermark--) {
-            if (mod1(i, i->watermark - 1, true)) {
+            if (mod1(i, i->watermark - 1, true, false)) {
                 cursor = move_cursor_to_absent(mv, cursor + 1);
             }
         }

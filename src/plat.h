@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define SHARED_EXPORT __declspec(dllexport)
