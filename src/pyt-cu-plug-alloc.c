@@ -1,8 +1,3 @@
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include <stdio.h>
-#include <stddef.h>
-
 #include "plat.h"
 
 void aimdo_vbars_free(size_t size);
@@ -21,43 +16,13 @@ typedef struct VMMEntry {
 
 static VMMEntry* vmm_table[VMM_HASH_SIZE];
 
-static inline unsigned int vmm_hash(void* ptr) {
-    return ((uintptr_t)ptr >> MIN_ALLOC_SHIFT) % VMM_HASH_SIZE;
-}
-
-static int check_cu_impl(CUresult res, const char *label) {
-    if (res != CUDA_SUCCESS && res != CUDA_ERROR_OUT_OF_MEMORY) {
-        const char* desc;
-        if (cuGetErrorString(res, &desc) != CUDA_SUCCESS) {
-            desc = "<FATAL - CANNOT PARSE CUDA ERROR CODE>";
-
-        }
-        fprintf(stderr, "CUDA API FAILED : %s : %s\n", label, desc);
-    }
-    return (res == CUDA_SUCCESS);
-}
-#define CHECK_CU(x) check_cu_impl((x), #x)
-
-static inline void do_free(VMMEntry **p, bool mmap_done) {
-    VMMEntry *entry = *p;
-
-    if (mmap_done) {
-        CHECK_CU(cuMemUnmap(entry->ptr, entry->size));
-    }
-    if (entry->handle) {
-        cuMemRelease(entry->handle);
-    }
-    if (entry->ptr) {
-        cuMemAddressFree(entry->ptr, entry->size);
-    }
-
-    *p = entry->next;
-    free(entry);
+static inline unsigned int vmm_hash(CUdeviceptr ptr) {
+    return ((uintptr_t)(void *)ptr >> MIN_ALLOC_SHIFT) % VMM_HASH_SIZE;
 }
 
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
-    bool mmap_done = false;
+    CUresult err;
     VMMEntry* entry = calloc(1, sizeof(*entry));
 
     if (!entry) {
@@ -67,52 +32,38 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
 
     entry->size = size;
 
-    {
-        CUresult err;
-        CUmemAllocationProp prop = {
-            .type = CU_MEM_ALLOCATION_TYPE_PINNED,
-            .location.type = CU_MEM_LOCATION_TYPE_DEVICE,
-            .location.id = device,
-        };
-
-        CUmemAccessDesc accessDesc = {
-            .location.type = CU_MEM_LOCATION_TYPE_DEVICE,
-            .location.id = device,
-            .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE,
-        };
-
-        /* FIXME: failure unwind chain all of this */
-        if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0)) ||
-            /* FIXME: Think about looping this by chunk. Ideally we want to consume
-             * what we can from cuda before we OOM so that the VBAR free routine
-             * doesn't over-free
-             */
-            !CHECK_CU(err = cuMemCreate(&entry->handle, size, &prop, 0)) ||
-            !CHECK_CU(err = cuMemMap(&entry->ptr, size, 0, entry->handle, 0)) ||
-            !(mmap_done = true) ||
-            !CHECK_CU(err = cuMemSetAccess(entry->ptr, size, &accessDesc, 1))) {
-
-            if (err != CUDA_ERROR_OUT_OF_MEMORY) {
-                do_free(&entry, mmap_done);
-                return NULL;
-            }
-            fprintf(stderr, "DEBUG: OOMED\n");
-            aimdo_vbars_free(size);
-            if (!CHECK_CU(err = cuMemSetAccess(entry->ptr, size, &accessDesc, 1))) {
-                do_free(&entry, mmap_done);
-                return NULL;
-            }
+    if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0))) {
+        goto fail;
+    }
+    /* FIXME: Think about looping this by chunk. Ideally we want to consume
+        * what we can from cuda before we OOM so that the VBAR free routine
+        * doesn't over-free
+        */
+    if (three_stooges(entry->ptr, size, device, &entry->handle) != CUDA_SUCCESS) {
+        if (err != CUDA_ERROR_OUT_OF_MEMORY) {
+            goto fail1;
+        }
+        fprintf(stderr, "DEBUG: OOMED\n");
+        aimdo_vbars_free(size);
+        if (three_stooges(entry->ptr, size, device, &entry->handle) != CUDA_SUCCESS) {
+            goto fail1;
         }
     }
 
     {
-        unsigned int h = vmm_hash(ptr);
+        unsigned int h = vmm_hash(entry->ptr);
         entry->next = vmm_table[h];
         vmm_table[h] = entry;
     }
 
-    printf("FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", entry->ptr, size, device, (unsigned long long)alloc_handle);
+    printf("FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", entry->ptr, size, device, (unsigned long long)entry->handle);
     return (void *)entry->ptr;
+
+fail1:
+    cuMemAddressFree(entry->ptr, size);
+fail:
+    free(entry);
+    return NULL;
 }
 
 SHARED_EXPORT
@@ -127,7 +78,12 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
             continue;
         }
 
-        do_free(curr, true);
+        CHECK_CU(cuMemUnmap(entry->ptr, entry->size));
+        CHECK_CU(cuMemRelease(entry->handle));
+        CHECK_CU(cuMemAddressFree(entry->ptr, entry->size));
+
+        *curr = entry->next;
+        free(entry);
         printf("Custom Free: ptr=%p, size=%zu, stream=%p\n", ptr, size, stream);
         return;
     }
