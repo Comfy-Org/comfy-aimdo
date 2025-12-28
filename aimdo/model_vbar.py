@@ -40,6 +40,11 @@ def get_lib_path():
         
     return str(base_path / lib_name)
 
+def get_primary_context():
+    allocator = CUDAPluggableAllocator(get_lib_path(), "alloc_fn", "free_fn")
+    pool = torch.cuda.MemPool(allocator)
+    return torch.cuda.use_mem_pool(pool)
+
 # Load the library
 lib_path = get_lib_path()
 if not os.path.exists(lib_path):
