@@ -5,9 +5,6 @@
 #define VBAR_GET_PAGE_NR(x) ((x) / VBAR_PAGE_SIZE)
 #define VBAR_GET_PAGE_NR_UP(x) VBAR_GET_PAGE_NR((x) + VBAR_PAGE_SIZE - 1)
 
-#define  ABSENT 0x0
-#define  LIVE
-
 typedef struct ResidentPage {
     CUmemGenericAllocationHandle handle;
     bool pinned;
