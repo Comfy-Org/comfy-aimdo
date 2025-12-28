@@ -46,7 +46,7 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
-          cl.exe /LD /O2 src/pyt-cu-plug-alloc.c -IC:/CUDA_SDK/include /Fe:aimdo/libvbar.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib
+          cl.exe /LD /O2 src/model-vbar.c src/pyt-cu-plug-alloc.c -IC:/CUDA_SDK/include /Fe:aimdo/libvbar.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib
         shell: cmd
 
       - name: Build wheels
@@ -56,7 +56,7 @@ jobs:
           CIBW_BUILD: "cp3*-manylinux_x86_64 cp3*-win_amd64"
           CIBW_SKIP: "cp3[0-8]-*"
           CIBW_BEFORE_BUILD_LINUX: >
-            gcc -shared -fPIC -O3 src/pyt-cu-plug-alloc.c 
+            gcc -shared -fPIC -O3 src/pyt-cu-plug-alloc.c src/model-vbar.c 
             -I/usr/local/cuda-12.1/include 
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
             -lcuda -o aimdo/aimdo.so
