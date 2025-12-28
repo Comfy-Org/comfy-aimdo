@@ -1,7 +1,5 @@
 #include "plat.h"
 
-void aimdo_vbars_free(size_t size);
-
 #define MIN_ALLOC_SHIFT 21
 #define MIN_ALLOC       (1 << MIN_ALLOC_SHIFT) /*2 MB as per Cuda page sizes and pytorch cacheing alloc */
 
