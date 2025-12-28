@@ -23,29 +23,33 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     CUresult err;
     VMMEntry* entry = calloc(1, sizeof(*entry));
 
-    fprintf(stderr, "FK1 Custom Alloc: size=%zu, device=%d\n", size, device);
+    log(DEBUG, "%s (start): size=%zu, device=%d\n", __func__, size, device);
 
     if (!entry) {
-        fprintf(stderr, "FATAL: Host OOM\n");
+        log(CRITICAL, "Host OOM\n");
         return NULL;
     }
 
     entry->size = size;
 
     if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0))) {
+        log(ERROR, "Could not reseve Virtual Address space for pytorch allocator");
         goto fail;
     }
     /* FIXME: Think about looping this by chunk. Ideally we want to consume
         * what we can from cuda before we OOM so that the VBAR free routine
         * doesn't over-free
         */
-    if (three_stooges(entry->ptr, size, device, &entry->handle) != CUDA_SUCCESS) {
+    if ((err = three_stooges(entry->ptr, size, device, &entry->handle)) != CUDA_SUCCESS) {
         if (err != CUDA_ERROR_OUT_OF_MEMORY) {
+            log(ERROR, "VRAM Allocation failed (non OOM)");
             goto fail1;
         }
-        fprintf(stderr, "DEBUG: OOMED\n");
+        log(DEBUG, "Pytorch allocator attempt exceeds available VRAM ...");
         vbars_free(size);
-        if (three_stooges(entry->ptr, size, device, &entry->handle) != CUDA_SUCCESS) {
+        if ((err = three_stooges(entry->ptr, size, device, &entry->handle)) != CUDA_SUCCESS) {
+            bool is_oom = err == CUDA_ERROR_OUT_OF_MEMORY;
+            log(is_oom ? INFO : ERROR, "VRAM Allocation failed (%s)", is_oom ? "OOM" : "error");
             goto fail1;
         }
     }
@@ -56,13 +60,14 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         vmm_table[h] = entry;
     }
 
-    fprintf(stderr, "FK2 Custom Alloc: ptr=%p, size=%zu, device=%d phys(%llx)\n", entry->ptr, size, device, (unsigned long long)entry->handle);
+    log(DEBUG, "%s (return): ptr=%p, phys(%llx)\n", entry->ptr, (ull)entry->handle);
     return (void *)entry->ptr;
 
 fail1:
     cuMemAddressFree(entry->ptr, size);
 fail:
     free(entry);
+    log(DEBUG, "%s (FAILED)", __func__);
     return NULL;
 }
 

@@ -16,6 +16,26 @@
 #define SHARED_EXPORT
 #endif
 
+typedef unsigned long long ull;
+
+enum DebugLevels {
+    __NONE__ = 0,
+    CRITICAL,
+    ERROR,
+    WARNING,
+    INFO,
+    DEBUG
+};
+
+/* debug.c */
+extern int log_level;
+const char *get_level_str(int level);
+
+#define log(level, ...) if (log_level >= (level)) {                                         \
+    fprintf(stderr, "aimdo: %s:%d:%s:", __FILE__, __LINE__, get_level_str(level));          \
+    fprintf(stderr, __VA_ARGS__);                                                           \
+}
+
 static inline int check_cu_impl(CUresult res, const char *label) {
     if (res != CUDA_SUCCESS && res != CUDA_ERROR_OUT_OF_MEMORY) {
         const char* desc;
@@ -23,7 +43,7 @@ static inline int check_cu_impl(CUresult res, const char *label) {
             desc = "<FATAL - CANNOT PARSE CUDA ERROR CODE>";
 
         }
-        fprintf(stderr, "CUDA API FAILED : %s : %s\n", label, desc);
+        log(DEBUG, "CUDA API FAILED : %s : %s\n", label, desc);
     }
     return (res == CUDA_SUCCESS);
 }

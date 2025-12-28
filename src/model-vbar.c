@@ -95,8 +95,6 @@ static inline void insert_vbar(ModelVBAR *mv) {
     highest_priority.lower = mv;
 }
 
-typedef unsigned long long ull;
-
 SHARED_EXPORT
 void *vbar_allocate(uint64_t size, int device) {
     one_time_setup();
