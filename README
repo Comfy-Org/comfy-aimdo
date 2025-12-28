@@ -1,0 +1,67 @@
+AI Model Demand Offloader
+
+This project is a pytorch VRAM allocator that implements on-demand offloading of
+model weights when the primary pytorch VRAM allocator comes under pressure.
+
+How it works:
+
+- The pytorch application creates a Virtual Base Address Register (VBAR) for a
+model. Create a VBAR doesn't cost any VRAM, only GPU virtual address space
+(which is pretty much free).
+
+- The pytorch application allocates tensors for model weights within the VBAR.
+These tensors are initially un-allocated and will segfault if touched.
+
+- The pytorch application faults in the tensors using the fault() API at the time
+the tensor is needed. This is where VRAM actually gets allocated.
+
+If the fault() is successful (sufficent VRAM for this tensor):
+    If this is the first time the tensor is being used:
+        - The application uses tensor::_copy() to populate the weight data on the
+          GPU
+    - The layer uses the weight tensor
+    - the application calls unpin() on the tensor to allow it to be freed under
+      pressure later.
+If the fault() is unsuccessful (offloaded weight):
+    - The application allocates a temporary regular GPU tensor
+    - uses _copy to populate weight data on the GPU
+    - the layer uses the temporary as the weight
+    - pytorch garbage collects the temp
+
+- The allocator will return failure on fault() for all tensors below a set of
+watermarks for what is expected to fit in VRAM. As the primary pytorch allocator
+hits Cuda OOMs, the watermarks of low priority tensors are reduced and the
+lowest priority weights are freed. This makes the weight tensors become
+unallocated again. The application must call fault() each time the weight is
+unused and is only guaranteed to stay resident until unpin() is called.
+
+Priorities:
+
+- The most recent VBARs are the higest priority and lower addresses in the VBAR
+take priority over higher addresses.
+
+- Applications should order their tensor allocations in the VBAR in load
+priority order with the lowest addresses for the highest priority weights.
+
+- calling fault() on a weight that is higher priority than other weights will
+cause those lower priority weights to get freed to make space.
+
+- Having a weight evicted sets that VBARs watermark to that weights level.
+Any weights above the watermark automtically fail the fault() api. This avoids
+constantly faulting in all weights while allowing the application to just
+blindly call fault() every layer and check the results without tracking VRAM
+allocations.
+
+- Existing VBARs can be pushed to top priority with the prioritize() API. This
+allows use of an already loaded or partially model (e.g. using the same model
+twice in a complex workflow). Using prioritize resets the offload watermark of
+that model to no offloading, giving its weights priority over any other
+currently loaded models.
+
+Support:
+
+Nvidia GPUs only
+Pytorch 2.6+
+Windows 11+
+Cuda 12.8+
+Linux as per python ManyLinux support
