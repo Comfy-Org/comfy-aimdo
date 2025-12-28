@@ -19,7 +19,8 @@
 typedef unsigned long long ull;
 
 enum DebugLevels {
-    __NONE__ = 0,
+    __NONE__ = -1,
+    ALL = 0,
     CRITICAL,
     ERROR,
     WARNING,
@@ -31,7 +32,7 @@ enum DebugLevels {
 extern int log_level;
 const char *get_level_str(int level);
 
-#define log(level, ...) if (log_level >= (level)) {                                         \
+#define log(level, ...) if (!log_level || log_level >= (level)) {                           \
     fprintf(stderr, "aimdo: %s:%d:%s:", __FILE__, __LINE__, get_level_str(level));          \
     fprintf(stderr, __VA_ARGS__);                                                           \
 }

@@ -60,7 +60,8 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         vmm_table[h] = entry;
     }
 
-    log(DEBUG, "%s (return): ptr=%p, phys(%llx)\n", entry->ptr, (ull)entry->handle);
+    log(DEBUG, "%s (return): ptr=%p, phys(%llx)\n", __func__,
+        (void *)entry->ptr, (ull)entry->handle);
     return (void *)entry->ptr;
 
 fail1:
