@@ -6,9 +6,8 @@ This project is a pytorch VRAM allocator that implements on-demand offloading of
 
 * **Nvidia GPUs only**
 * **Pytorch 2.6+**
-* **Windows 11+**
 * **Cuda 12.8+**
-* **Linux** as per python ManyLinux support
+* **Windows 11+** / **Linux** as per python ManyLinux support
 
 ---
 
