@@ -31,37 +31,60 @@ def run_layer(input_tensor, weight_tensor, cpu_source):
 allocator = torch.cuda.memory.CUDAPluggableAllocator(get_lib_path(), "alloc_fn", "free_fn")
 pool = torch.cuda.MemPool(allocator.allocator())
 
+def run_model(weights, cpu_weight):
+    torch.cuda.empty_cache()
+    x = torch.zeros(cpu_weight.shape, device="cuda:0", dtype=torch.float16)
+    for i in range(3): # Iteration loop
+        print(f"\nIteration {i}")
+        
+        for layer_weight in weights:
+            x = run_layer(x, layer_weight, cpu_weight)
+
 #This installs aimdo to the pytorch main allocator
 with torch.cuda.use_mem_pool(pool):
     #FIXME: prime torch properly somewhere else
-    x = torch.randn(1, device=torch.device("cuda:0"))
-
-    # --- Setup ---
-    # 50GB VBAR
-
-    vbar = ModelVBAR(14 * 1024**3, device=0)
+    dummy = torch.randn(1, device=torch.device("cuda:0"))
 
     dtype = torch.float16
+
+    # --- Setup ---
+    vbar1 = ModelVBAR(14 * 1024**3, device=0)
+
     # ~400MB weights
     shape = (10240, 20480) 
     num_layers = 12 * 1024 **3 // (20480 * 10240 * dtype.itemsize)
 
     print(f"allocating {num_layers} 400MB layers")
+    weights1 = [vbar1.alloc(shape, dtype=dtype) for _ in range(num_layers)]
+    #just share one weight in this example, as don't complicate this example
+    #with RAM usage. in the real world this will be separate weights for every layer
+    cpu_weight1 = torch.randn(shape, dtype=dtype)
 
-    weights = [vbar.alloc(shape, dtype=torch.float16) for _ in range(num_layers)]
-    #just share one weight in this example
-    #in the real world this will be separate weights for every layer
-    cpu_weight = torch.randn(shape, dtype=torch.float16)
-
-    x = torch.zeros(shape, device="cuda:0", dtype=torch.float16)
+    print("##################### Run the first model #######################")
+    print("Some weights will be loaded and stay there for all iterations")
+    print("Some weights will be offloaded")
 
     # --- Start Inference ---
-    vbar.prioritize() # Called ONCE at the start of the job
+    run_model(weights1, cpu_weight1)
 
-    for i in range(10): # Iteration loop
-        print(f"\nIteration {i}")
-        
-        for layer_idx in range(num_layers):
-            x = run_layer(x, weights[layer_idx], cpu_weight)
+    #A smaller second model but with chunkier weights
+    vbar2 = ModelVBAR(3 * 1024 **3, device=0)
+    shape = (20480, 20480)
+    num_layers = 2
 
-    print("\nFinal output shape:", x.shape)
+    print(f"allocating {num_layers} 800MB layers")
+    weights2 = [ vbar2.alloc(shape, dtype=dtype) for _ in range(num_layers)]
+    cpu_weight2 = torch.randn(shape, dtype=dtype)
+
+    print("##################### Run the second model #######################")
+    print("Everything will be loaded and will displace weights of the first model")
+
+    run_model(weights2, cpu_weight2)
+
+    print("##################### Run the first model again #######################")
+    print("Some weights will still be loaded from before and be there first iteration")
+    print("Some weights will get re-loaded on the first interation")
+    print("The rest will be offloaded again")
+
+    vbar1.prioritize()
+    run_model(weights1, cpu_weight1)
