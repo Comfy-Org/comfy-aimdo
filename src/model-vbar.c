@@ -130,7 +130,7 @@ SHARED_EXPORT
 void vbar_prioritize(void *vbar) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
-    log(DEBUG, "%s vbar=%p", __func__);
+    log(DEBUG, "%s vbar=%p\n", __func__);
 
     remove_vbar(mv);
     insert_vbar(mv);
@@ -140,7 +140,7 @@ void vbar_prioritize(void *vbar) {
 
 SHARED_EXPORT
 uint64_t vbar_get(void *vbar) {
-    log(DEBUG, "%s vbar=%p", __func__, vbar);
+    log(DEBUG, "%s vbar=%p\n", __func__, vbar);
     return (uint64_t)((ModelVBAR *)vbar)->vbar;
 }
 
@@ -194,7 +194,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
         rp->pinned = true;
     }
 
-    log(DEBUG, "%s (return)\n");
+    log(DEBUG, "%s (return)\n", __func__);
     return VBAR_FAULT_SUCCESS;
 }
 

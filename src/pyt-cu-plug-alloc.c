@@ -75,7 +75,7 @@ fail:
 
 SHARED_EXPORT
 void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
-    log(DEBUG, "%s (start) ptr=%p size=%zu, device=%d\n", ptr, size, device);
+    log(DEBUG, "%s (start) ptr=%p size=%zu, device=%d\n", __func__, ptr, size, device);
     if (ptr == NULL) {
         return;
     }
@@ -96,5 +96,5 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
         return;
     }
 
-    log(ERROR, "%s could not find VRAM@%p\n", ptr);
+    log(ERROR, "%s could not find VRAM@%p\n", __func__, ptr);
 }
