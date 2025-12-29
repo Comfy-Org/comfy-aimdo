@@ -44,14 +44,14 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         */
     if ((err = three_stooges(entry->ptr, size, device, &entry->handle)) != CUDA_SUCCESS) {
         if (err != CUDA_ERROR_OUT_OF_MEMORY) {
-            log(ERROR, "VRAM Allocation failed (non OOM)");
+            log(ERROR, "VRAM Allocation failed (non OOM)\n");
             goto fail1;
         }
-        log(DEBUG, "Pytorch allocator attempt exceeds available VRAM ...");
+        log(DEBUG, "Pytorch allocator attempt exceeds available VRAM ...\n");
         vbars_free(size);
         if ((err = three_stooges(entry->ptr, size, device, &entry->handle)) != CUDA_SUCCESS) {
             bool is_oom = err == CUDA_ERROR_OUT_OF_MEMORY;
-            log(is_oom ? INFO : ERROR, "VRAM Allocation failed (%s)", is_oom ? "OOM" : "error");
+            log(is_oom ? INFO : ERROR, "VRAM Allocation failed (%s)\n", is_oom ? "OOM" : "error");
             goto fail1;
         }
     }
@@ -69,7 +69,7 @@ fail1:
     cuMemAddressFree(entry->ptr, size);
 fail:
     free(entry);
-    log(DEBUG, "%s (FAILED)", __func__);
+    log(DEBUG, "%s (FAILED)\n", __func__);
     return NULL;
 }
 

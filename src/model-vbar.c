@@ -116,7 +116,7 @@ void *vbar_allocate(uint64_t size, int device) {
 
     /* FIXME: Do I care about alignment? Does Cuda just look after itself? */
     if (!CHECK_CU(cuMemAddressReserve(&mv->vbar, size, 0, 0, 0))) {
-        log(ERROR, "Could not reseve Virtual Address space for VBAR");
+        log(ERROR, "Could not reseve Virtual Address space for VBAR\n");
         free(mv);
         return NULL;
     }
@@ -163,6 +163,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
     log(DEBUG, "%s (start): offset=%lldk, size=%lldk\n", __func__, (ull)(offset / K), (ull)(size / K));
 
     if (page_end > mv->watermark) {
+        log(DEBUG, "VBAR Allocation is above watermark\n");
         return VBAR_FAULT_OOM;
     }
 
@@ -177,17 +178,17 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
 
         if ((err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
-                log(ERROR, "VRAM Allocation failed (non OOM)");
+                log(ERROR, "VRAM Allocation failed (non OOM)\n");
                 return VBAR_FAULT_ERROR;
             }
-            log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...");
+            log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...\n");
             vbars_free_for_vbar(mv);
             if (page_nr >= mv->watermark) {
-                log(DEBUG, "VBAR allocation cancelled due to watermark reduction");
+                log(DEBUG, "VBAR allocation cancelled due to watermark reduction\n");
                 return VBAR_FAULT_OOM;
             }
             if ((err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
-                log(ERROR, "VRAM Allocation failed");
+                log(ERROR, "VRAM Allocation failed\n");
                 return VBAR_FAULT_ERROR;
             }
         }
