@@ -97,16 +97,19 @@ class ModelVBAR:
         self.offset += num_bytes
         return t
 
-    #define VBAR_FAULT_SUCCESS  0
-    #define VBAR_FAULT_OOM      1
-    #define VBAR_FAULT_ERROR    2
+    #define VBAR_FAULT_NON_RESIDENT -1
+    #define VBAR_FAULT_SUCCESS      0
+    #define VBAR_FAULT_OOM          1
+    #define VBAR_FAULT_ERROR        2
 
     def fault(self, offset, size):
         res = lib.vbar_fault(self._ptr, offset, size)
+        if res == -1:
+            return True, False
         if res == 0:
-            return True
+            return True, True
         elif res == 1:
-            return False
+            return False, False
         else:
             raise RuntimeError(f"Fault failed: {res}")
 

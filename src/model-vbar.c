@@ -148,13 +148,15 @@ uint64_t vbar_get(void *vbar) {
     return (uint64_t)((ModelVBAR *)vbar)->vbar;
 }
 
-#define VBAR_FAULT_SUCCESS  0
-#define VBAR_FAULT_OOM      1
-#define VBAR_FAULT_ERROR    2
+#define VBAR_FAULT_NON_RESIDENT     -1
+#define VBAR_FAULT_SUCCESS           0
+#define VBAR_FAULT_OOM               1
+#define VBAR_FAULT_ERROR             2
 
 SHARED_EXPORT
 int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
+    int ret = VBAR_FAULT_SUCCESS;
 
     size_t page_end = VBAR_GET_PAGE_NR_UP(offset + size);
 
@@ -189,6 +191,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
                 return VBAR_FAULT_ERROR;
             }
         }
+        ret = VBAR_FAULT_NON_RESIDENT;
     }
 
     /* We got our allocation */
@@ -198,8 +201,8 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
         rp->pinned = true;
     }
 
-    log(DEBUG, "%s (return)\n", __func__);
-    return VBAR_FAULT_SUCCESS;
+    log(DEBUG, "%s (return) %d\n", __func__, ret);
+    return ret;
 }
 
 void vbar_unpin(void *vbar, uint64_t offset, uint64_t size) {
