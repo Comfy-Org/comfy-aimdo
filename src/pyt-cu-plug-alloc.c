@@ -9,6 +9,7 @@ typedef struct VMMEntry {
     CUdeviceptr ptr;
     CUmemGenericAllocationHandle handle;
     size_t size;
+    int device;
     struct VMMEntry* next;
 } VMMEntry;
 
@@ -31,6 +32,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     }
 
     entry->size = size;
+    entry->device = device;
 
     if (!CHECK_CU(err = cuMemAddressReserve(&entry->ptr, size, 0, 0, 0))) {
         log(ERROR, "Could not reseve Virtual Address space for pytorch allocator");
@@ -60,8 +62,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         vmm_table[h] = entry;
     }
 
-    log(DEBUG, "%s (return): ptr=%p, phys(%llx)\n", __func__,
-        (void *)entry->ptr, (ull)entry->handle);
+    log(DEBUG, "%s (return): ptr=%p\n", __func__, (void *)entry->ptr);
     return (void *)entry->ptr;
 
 fail1:
@@ -74,13 +75,14 @@ fail:
 
 SHARED_EXPORT
 void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
+    log(DEBUG, "%s (start) ptr=%p size=%zu, device=%d\n", ptr, size, device);
     if (ptr == NULL) {
         return;
     }
 
     for (VMMEntry **curr = &vmm_table[vmm_hash((CUdeviceptr)ptr)]; *curr; curr = &(*curr)->next) {
         VMMEntry *entry = *curr;
-        if (entry->ptr != (CUdeviceptr)ptr) {
+        if (entry->ptr != (CUdeviceptr)ptr || entry->device != device) {
             continue;
         }
 
@@ -90,9 +92,9 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
 
         *curr = entry->next;
         free(entry);
-        printf("Custom Free: ptr=%p, size=%zu, stream=%p\n", ptr, size, stream);
+        log(DEBUG, "Freed: ptr=%p, size=%zu, stream=%p\n", ptr, size, stream);
         return;
     }
 
-    fprintf(stderr, "WARNING: free_fn could not find pointer %p in lookup table\n", ptr);
+    log(ERROR, "%s could not find VRAM@%p\n", ptr);
 }

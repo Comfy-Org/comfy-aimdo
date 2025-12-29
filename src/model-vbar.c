@@ -97,19 +97,22 @@ static inline void insert_vbar(ModelVBAR *mv) {
 
 SHARED_EXPORT
 void *vbar_allocate(uint64_t size, int device) {
-    one_time_setup();
-
     ModelVBAR *mv;
+
+    one_time_setup();
+    log(DEBUG, "%s (start): size=%zu, device=%d\n", __func__, size, device);
 
     size_t nr_pages = VBAR_GET_PAGE_NR_UP(size);
     size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
+        log(CRITICAL, "Host OOM\n");
         return NULL;
     }
 
     /* FIXME: Do I care about alignment? Does Cuda just look after itself? */
     if (!CHECK_CU(cuMemAddressReserve(&mv->vbar, size, 0, 0, 0))) {
+        log(ERROR, "Could not reseve Virtual Address space for VBAR");
         free(mv);
         return NULL;
     }
@@ -119,12 +122,15 @@ void *vbar_allocate(uint64_t size, int device) {
     
     insert_vbar(mv);
 
+    log(DEBUG, "%s (return): vbar=%p\n", __func__, (void *)mv);
     return mv;
 }
 
 SHARED_EXPORT
 void vbar_prioritize(void *vbar) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
+
+    log(DEBUG, "%s vbar=%p", __func__);
 
     remove_vbar(mv);
     insert_vbar(mv);
@@ -134,6 +140,7 @@ void vbar_prioritize(void *vbar) {
 
 SHARED_EXPORT
 uint64_t vbar_get(void *vbar) {
+    log(DEBUG, "%s vbar=%p", __func__);
     return (uint64_t)((ModelVBAR *)vbar)->vbar;
 }
 
