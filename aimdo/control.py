@@ -35,11 +35,30 @@ lib_path = get_lib_path()
 if not os.path.exists(lib_path):
     raise ImportError(f"Cannot find native library at {lib_path}")
 
-lib=None
-allocator=None
+lib = ctypes.CDLL(lib_path)
+allocator = CUDAPluggableAllocator(lib, "alloc_fn", "free_fn")
 
-def init():
-    global lib, allocator
-    lib = ctypes.CDLL(lib_path)
-    allocator = CUDAPluggableAllocator(lib, "alloc_fn", "free_fn")
+lib.set_log_level_none.argtypes = []
+lib.set_log_level_none.restype = None
 
+lib.set_log_level_critical.argtypes = []
+lib.set_log_level_critical.restype = None
+
+lib.set_log_level_error.argtypes = []
+lib.set_log_level_error.restype = None
+
+lib.set_log_level_warning.argtypes = []
+lib.set_log_level_warning.restype = None
+
+lib.set_log_level_info.argtypes = []
+lib.set_log_level_info.restype = None
+
+lib.set_log_level_debug.argtypes = []
+lib.set_log_level_debug.restype = None
+
+def set_log_none(): lib.set_log_level_none()
+def set_log_critical(): lib.set_log_level_critical()
+def set_log_error(): lib.set_log_level_error()
+def set_log_warning(): lib.set_log_level_warning()
+def set_log_info(): lib.set_log_level_info()
+def set_log_debug(): lib.set_log_level_debug()

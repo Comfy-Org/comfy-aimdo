@@ -3,10 +3,6 @@ import ctypes
 
 from . import control
 
-# Ensure the library is loaded before accessing control.lib
-if control.lib is None:
-    control.init()
-
 lib = control.lib
 
 #1d int8 tensor that the user can then view(dtype=).view(shape=) as whatever they want
