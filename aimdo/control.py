@@ -1,18 +1,11 @@
+#This module does not import torch by design. It can used to detect the
+#libraries existance via import before the first torch import for environment
+#logic.
 
-import torch
 import os
 import ctypes
 import platform
 from pathlib import Path
-
-
-class CUDAPluggableAllocator(torch.cuda.memory.CUDAPluggableAllocator):
-    def __init__(self, lib, alloc_fn_name: str, free_fn_name: str):
-        alloc_fn = ctypes.cast(getattr(lib, alloc_fn_name), ctypes.c_void_p).value
-        free_fn = ctypes.cast(getattr(lib, free_fn_name), ctypes.c_void_p).value
-        assert alloc_fn is not None
-        assert free_fn is not None
-        self._allocator = torch._C._cuda_customAllocator(alloc_fn, free_fn)
 
 def get_lib_path():
     # Get the directory where this script/package is located
