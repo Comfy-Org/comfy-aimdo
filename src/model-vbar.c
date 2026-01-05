@@ -8,6 +8,7 @@
 typedef struct ResidentPage {
     CUmemGenericAllocationHandle handle;
     bool pinned;
+    size_t serial;
 } ResidentPage;
 
 typedef struct ModelVBAR {
@@ -144,7 +145,7 @@ SHARED_EXPORT
 void vbar_prioritize(void *vbar) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
-    log(DEBUG, "%s vbar=%p\n", __func__);
+    log(DEBUG, "%s vbar=%p\n", __func__, vbar);
 
     remove_vbar(mv);
     insert_vbar(mv);
@@ -168,15 +169,15 @@ uint64_t vbar_get(void *vbar) {
     return (uint64_t)((ModelVBAR *)vbar)->vbar;
 }
 
-#define VBAR_FAULT_NON_RESIDENT     -1
 #define VBAR_FAULT_SUCCESS           0
 #define VBAR_FAULT_OOM               1
 #define VBAR_FAULT_ERROR             2
 
 SHARED_EXPORT
-int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
+int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     int ret = VBAR_FAULT_SUCCESS;
+    size_t signature_index = 0;
 
     size_t page_end = VBAR_GET_PAGE_NR_UP(offset + size);
 
@@ -193,6 +194,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
         ResidentPage *rp = &mv->residency_map[page_nr];
 
         if (rp->handle) {
+            signature[signature_index++] = rp->serial;
             continue;
         }
 
@@ -212,8 +214,9 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size) {
                 return VBAR_FAULT_ERROR;
             }
         }
+        rp->serial++;
+        signature[signature_index++] = rp->serial;
         mv->resident_count++;
-        ret = VBAR_FAULT_NON_RESIDENT;
     }
 
     /* We got our allocation */

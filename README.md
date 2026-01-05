@@ -18,8 +18,9 @@ This project is a pytorch VRAM allocator that implements on-demand offloading of
 * The pytorch application faults in the tensors using the `fault()` API at the time the tensor is needed. This is where VRAM actually gets allocated.
 
 ##### If the `fault()` is successful (sufficient VRAM for this tensor):
-1.  **If the fault() result return as resident=false:**
+1.  **If the fault() resultant signature is changed or unknown:**
     * The application uses `tensor::_copy()` to populate the weight data on the GPU.
+    * The application saves the returned signature against this weight for future comparison
 2.  The layer uses the weight tensor.
 3.  The application calls `unpin()` on the tensor to allow it to be freed under pressure later if needed.
 
