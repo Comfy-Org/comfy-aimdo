@@ -56,7 +56,7 @@ jobs:
           CIBW_BUILD: "cp3*-manylinux_x86_64 cp3*-win_amd64"
           CIBW_SKIP: "cp3[0-8]-*"
           CIBW_BEFORE_BUILD_LINUX: >
-            gcc -shared -fPIC -O3 src/pyt-cu-plug-alloc.c src/model-vbar.c src/debug.c
+            gcc -shared -fPIC -O0 -g src/pyt-cu-plug-alloc.c src/model-vbar.c src/debug.c
             -I/usr/local/cuda-12.1/include 
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
             -lcuda -o aimdo/aimdo.so
