@@ -1,4 +1,4 @@
-# AI Model Demand Offloader
+# AI Model Dynamic Offloader
 
 This project is a pytorch VRAM allocator that implements on-demand offloading of model weights when the primary pytorch VRAM allocator comes under pressure.
 
