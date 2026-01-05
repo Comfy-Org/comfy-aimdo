@@ -1,6 +1,6 @@
 import gc
 import torch
-import torch.nn.functional as F
+import time
 
 import aimdo.control
 from aimdo.allocator import allocator
@@ -32,7 +32,7 @@ def run_layer(input_tensor, weight_tensor, cpu_source, quiet=False):
 
     return output
 
-def run_model(weights, cpu_weight):
+def run_model(weights, cpu_weight, sleep=0):
     with torch.cuda.use_mem_pool(torch.cuda.MemPool(allocator.allocator())):
         x = torch.zeros(cpu_weight.shape, device="cuda:0", dtype=torch.float16)
         for i in range(10): # Iteration loop
@@ -42,6 +42,7 @@ def run_model(weights, cpu_weight):
 
             for layer_weight in weights:
                 x = run_layer(x, layer_weight, cpu_weight, quiet=(i > 2))
+            time.sleep(sleep) #so you can see nvtop
         #sometimes torch can free mempools while the GPU is still working. Must sync
         #before we gc this mempool
         torch.cuda.synchronize()
@@ -83,7 +84,7 @@ cpu_weight2 = torch.ones(shape, dtype=dtype)
 print("##################### Run the second model #######################")
 print("Everything will be loaded and will displace some weights of the first model\n")
 
-run_model(weights2, cpu_weight2)
+run_model(weights2, cpu_weight2, sleep=0.5)
 
 print("##################### Run the first model again #######################")
 print("Some weights will still be loaded from before and be there first iteration")
