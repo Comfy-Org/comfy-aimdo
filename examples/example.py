@@ -4,21 +4,22 @@ import time
 
 import aimdo.control
 from aimdo.allocator import allocator
-from aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin
+from aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare
 
 aimdo.control.set_log_info()
 
 def run_layer(input_tensor, weight_tensor, cpu_source, quiet=False):
     o = weight_tensor.model_vbar_offset // (1024 ** 2)
-    faulted, resident = vbar_fault(weight_tensor)
-    if (faulted):
-        if not resident:
+    signature = vbar_fault(weight_tensor)
+    if signature is not None:
+        if not vbar_signature_compare(signature, getattr(weight_tensor, "_v_signature", None)):
             weight_tensor.copy_(cpu_source)
             if not quiet:
                 print(f"[First Load] Populated weight at offset: {o}M")
         elif not quiet:
             print(f"[No Load Needed] Reusing weight at offset: {o}M")
         w = weight_tensor
+        weight_tensor._v_signature = signature
     else:
         if not quiet:
             print(f"[Offloaded] offset: {o}M")
