@@ -119,4 +119,5 @@ def vbar_fault(tensor):
     return tensor.model_vbar.fault(tensor.model_vbar_offset, tensor.model_vbar_size)
 
 def vbar_unpin(tensor):
-    tensor.model_vbar.unpin(tensor.model_vbar_offset, tensor.model_vbar_size)
+    if tensor is not None and hasattr(tensor, 'model_vbar'):
+        tensor.model_vbar.unpin(tensor.model_vbar_offset, tensor.model_vbar_size)
