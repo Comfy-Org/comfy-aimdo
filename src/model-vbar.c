@@ -35,7 +35,9 @@ SHARED_EXPORT
 void vbars_analyze() {
     size_t calculated_total_vram = 0;
 
-    for (ModelVBAR *i = lowest_priority.higher; i != &highest_priority; i = i->higher) {
+    log(DEBUG, "---------------- VBAR Usage ---------------\n")
+
+    for (ModelVBAR *i = lowest_priority.higher; i && i != &highest_priority; i = i->higher) {
         size_t actual_resident_count = 0;
 
         for (size_t p = 0; p < i->nr_pages; p++) {
