@@ -80,7 +80,8 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
 
     CHECK_CU(cuCtxSynchronize());
 
-    for (ModelVBAR *i = lowest_priority.higher; cursor < target && i != &highest_priority;
+    for (ModelVBAR *i = lowest_priority.higher;
+         cursor < target && cursor < mv->watermark && i != &highest_priority;
          i = i->higher) {
         for (; cursor < target && cursor < mv->watermark && i->watermark; i->watermark--) {
             if (mod1(i, i->watermark - 1, true, false)) {
