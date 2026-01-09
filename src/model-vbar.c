@@ -230,6 +230,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
     return ret;
 }
 
+SHARED_EXPORT
 void vbar_unpin(void *vbar, uint64_t offset, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
