@@ -318,7 +318,7 @@ uint64_t vbar_free_memory(void *vbar, uint64_t size) {
     size_t pages_to_free = VBAR_GET_PAGE_NR_UP(size);
     size_t pages_freed = 0;
 
-    log(DEBUG, "%s (start): size=%lldk, size=%lldk\n", __func__, (ull)size);
+    log(DEBUG, "%s (start): size=%lldk\n", __func__, (ull)size);
 
     for (;pages_to_free && mv->watermark; mv->watermark--) {
         /* In theory we should never have pins here, but
