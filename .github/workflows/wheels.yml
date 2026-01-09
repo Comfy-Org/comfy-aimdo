@@ -46,7 +46,7 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
-          cl.exe /LD /O2 src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/shmem-detect.c -IC:/CUDA_SDK/include /Fe:aimdo/aimdo.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib
+          cl.exe /LD /O2 src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/shmem-detect.c -IC:/CUDA_SDK/include /Fe:aimdo/aimdo.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
         shell: cmd
 
       - name: Build wheels
