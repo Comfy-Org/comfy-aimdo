@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <dxgi1_4.h>
 
+typedef SSIZE_T ssize_t;
+
 static struct {
     IDXGIFactory4 *factory;
     IDXGIAdapter3 *adapter;

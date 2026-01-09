@@ -14,8 +14,6 @@
 
 #define SHARED_EXPORT __declspec(dllexport)
 
-typedef SSIZE_T ssize_t;
-
 size_t wddm_budget_deficit(size_t bytes); /* shmem-detect.c */
 
 #else
