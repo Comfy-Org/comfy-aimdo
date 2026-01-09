@@ -76,6 +76,7 @@ fail:
 
 SHARED_EXPORT
 void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
+    log_shot(DEBUG, "Pytorch is freeing VRAM ...\n");
     log(VERBOSE, "%s (start) ptr=%p size=%zuk, device=%d\n", __func__, ptr, size / K, device);
     if (ptr == NULL) {
         return;
@@ -88,12 +89,13 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
         }
 
         CHECK_CU(cuMemUnmap(entry->ptr, entry->size));
+        total_vram_usage -= entry->size;
         CHECK_CU(cuMemRelease(entry->handle));
         CHECK_CU(cuMemAddressFree(entry->ptr, entry->size));
 
         *curr = entry->next;
         free(entry);
-        log(DEBUG, "Freed: ptr=%p, size=%zuk, stream=%p\n", ptr, size / K, stream);
+        log(VERBOSE, "Freed: ptr=%p, size=%zuk, stream=%p\n", ptr, size / K, stream);
         return;
     }
 
