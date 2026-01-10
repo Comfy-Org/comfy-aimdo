@@ -81,7 +81,7 @@ class ModelVBAR:
         return lib.vbar_loaded_size(self._ptr)
 
     def free_memory(self, size_bytes):
-        return lib.vbar_free_memory(self._ptr, size_bytes)
+        return lib.vbar_free_memory(self._ptr, int(size_bytes))
 
     def __del__(self):
         if hasattr(self, '_ptr') and self._ptr:
