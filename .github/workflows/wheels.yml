@@ -72,7 +72,6 @@ jobs:
           path: ./wheelhouse-none/*.whl
 
       - name: Build wheels
-        if: runner.os == 'Linux'
         uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_MANYLINUX_X86_64_IMAGE: custom-cuda-builder 
