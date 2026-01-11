@@ -54,7 +54,7 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
-          cl.exe /LD /O2 src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/shmem-detect.c -IC:/CUDA_SDK/include /Fe:aimdo/aimdo.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
+          cl.exe /LD /O2 src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/shmem-detect.c -IC:/CUDA_SDK/include /Fe:comfy-aimdo/aimdo.dll /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
         shell: cmd
 
       - name: Build wheels
@@ -67,7 +67,7 @@ jobs:
             gcc -shared -fPIC -O0 -g src/pyt-cu-plug-alloc.c src/model-vbar.c src/debug.c
             -I/usr/local/cuda-12.1/include 
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
-            -lcuda -o aimdo/aimdo.so
+            -lcuda -o comfy-aimdo/aimdo.so
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"
 
       - uses: actions/upload-artifact@v4
