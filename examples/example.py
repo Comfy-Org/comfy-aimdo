@@ -37,7 +37,7 @@ class CUDAPluggableAllocator(torch.cuda.memory.CUDAPluggableAllocator):
         assert free_fn is not None
         self._allocator = torch._C._cuda_customAllocator(alloc_fn, free_fn)
 
-allocator = CUDAPluggableAllocator(aimdo.control.lib, "alloc_fn", "free_fn")
+allocator = CUDAPluggableAllocator(comfy_aimdo.control.lib, "alloc_fn", "free_fn")
 
 signatures = {}
 
