@@ -8,12 +8,5 @@ class BinaryDistribution(Distribution):
     def has_ext_modules(foo): return True
 
 setup(
-    name="aimdo",
-    version="0.1.0",
-    packages=["aimdo"],
-    # We include the compiled binary as package data
-    package_data={
-        "aimdo": ["aimdo.dll" if sys.platform == "win32" else "aimdo.so"],
-    },
     distclass=BinaryDistribution,
 )

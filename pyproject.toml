@@ -1,10 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aimdo"
-version = "0.0.1"
+name = "comfy-aimdo"
+dynamic = ["version"]
 
 [tool.setuptools.package-data]
-"aimdo" = ["*.so", "*.dll"]
+"comfy-aimdo" = ["*.so", "*.dll"]
+
+[tool.setuptools_scm]
+version_file = "comfy-aimdo/_version.py"

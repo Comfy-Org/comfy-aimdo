@@ -4,10 +4,10 @@ import time
 import ctypes
 import math
 
-import aimdo.control
-from aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare, vbars_analyze
+import comfy_aimdo.control
+from comfy_aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare, vbars_analyze
 
-aimdo.control.set_log_debug()
+comfy_aimdo.control.set_log_debug()
 
 def get_tensor_from_raw_ptr(ptr, size, device):
     container = {
