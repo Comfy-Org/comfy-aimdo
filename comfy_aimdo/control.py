@@ -18,7 +18,7 @@ def get_lib_path():
 
     return None if lib_name is None else str(base_path / lib_name)
 
-def init(device_id: int):
+def init():
     global lib
 
     if lib is not None:
