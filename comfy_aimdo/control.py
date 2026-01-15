@@ -2,6 +2,9 @@ import os
 import ctypes
 import platform
 from pathlib import Path
+import logging
+
+lib = None
 
 def get_lib_path():
     base_path = Path(__file__).parent.resolve()
@@ -15,37 +18,23 @@ def get_lib_path():
 
     return None if lib_name is None else str(base_path / lib_name)
 
-lib_path = get_lib_path()
+def init(device_id: int):
+    global lib
 
-lib = None
-
-if lib_path is not None:
-    if not os.path.exists(lib_path):
-        raise ImportError(f"Cannot find native library at {lib_path}")
-    lib = ctypes.CDLL(lib_path)
-
-if platform.system() == "Windows":
-
-    lib.wddm_init.argtypes = [ctypes.c_int]
-    lib.wddm_init.restype = ctypes.c_bool
-
-    lib.wddm_cleanup.argtypes = []
-    lib.wddm_cleanup.restype = None
-
-    def init_vram_guard(device_id: int):
-        return lib.wddm_init(device_id)
-
-    def shutdown_vram_guard():
-        lib.wddm_cleanup()
-
-else:
-    def init_vram_guard(device_id: int):
+    if lib is not None:
         return True
-    def shutdown_vram_guard():
-        pass
 
+    lib_path = get_lib_path()
+    if lib_path is None:
+        logging.info(f"Unsupported platform for comfy-aimdo: {platform.system()}")
+        return False
+    try:
+        lib = ctypes.CDLL(lib_path)
+    except Exception as e:
+        logging.info(f"comfy-aimdo failed to load: {lib_path}: {e}")
+        logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia GPUs")
+        return False
 
-if lib is not None:
     lib.set_log_level_none.argtypes = []
     lib.set_log_level_none.restype = None
 
@@ -66,6 +55,27 @@ if lib is not None:
 
     lib.set_log_level_verbose.argtypes = []
     lib.set_log_level_verbose.restype = None
+
+    if platform.system() == "Windows":
+
+        lib.wddm_init.argtypes = [ctypes.c_int]
+        lib.wddm_init.restype = ctypes.c_bool
+
+        lib.wddm_cleanup.argtypes = []
+        lib.wddm_cleanup.restype = None
+
+        if not lib.wddm_init(device_id):
+            lib = None
+            return False
+
+    return True
+
+def deinit():
+    global lib
+    if lib is not None and platform.system() == "Windows":
+        lib.wddm_cleanup()
+    lib = None
+
 
 def set_log_none(): lib.set_log_level_none()
 def set_log_critical(): lib.set_log_level_critical()
