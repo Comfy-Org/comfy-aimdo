@@ -61,7 +61,7 @@ jobs:
           cl.exe /LD /O2 ^
             src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/win/shmem-detect.c src/win/model-rbar.c ^
             /Isrc /IC:/CUDA_SDK/include /Fe:comfy_aimdo/aimdo.dll ^
-            /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
+            /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib onecore.lib
         shell: cmd
 
       - name: Build default Stub Wheel
