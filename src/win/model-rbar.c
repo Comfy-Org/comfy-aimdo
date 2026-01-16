@@ -10,6 +10,9 @@ typedef struct {
     bool is_mapped;
 } MMAPReservation;
 
+#undef log
+#define log(a, ...) fprintf(stderr, __VA_ARGS__)
+
 #define MAX_RESERVATIONS 64
 MMAPReservation g_reservations[MAX_RESERVATIONS];
 
@@ -81,13 +84,13 @@ void *rbar_allocate(char *file_path) {
         return NULL;
     }
 
+    log(DEBUG, "RBAR: Creating RBAR for %s\n", file_path);
     for (i = 0; i < MAX_RESERVATIONS; i++) {
         res = &g_reservations[i];
         if (!res->base_address) {
             break;
         }
     }
-    log(DEBUG, "RBAR: Creating RBAR for %s\n", file_path);
     if (i == MAX_RESERVATIONS) {
         log(ERROR, "RBAR: Maximum reservations (%d) reached\n", MAX_RESERVATIONS);
         return NULL;

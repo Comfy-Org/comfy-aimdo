@@ -3,6 +3,9 @@
 #include <windows.h>
 #include <dxgi1_4.h>
 
+#undef log
+#define log(a, ...) fprintf(stderr, __VA_ARGS__)
+
 typedef SSIZE_T ssize_t;
 
 static struct {
