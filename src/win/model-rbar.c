@@ -11,7 +11,7 @@ typedef struct {
 } MMAPReservation;
 
 #undef log
-#define log(a, ...) fprintf(stderr, __VA_ARGS__)
+#define log(a, ...) fprintf(stderr, __VA_ARGS__);
 
 #define MAX_RESERVATIONS 64
 MMAPReservation g_reservations[MAX_RESERVATIONS];
