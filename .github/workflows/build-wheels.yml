@@ -2,11 +2,15 @@ name: Build Wheels
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - 'dev/**'
     tags:
-        - "v*"
+      - "v*"
   pull_request:
-    branches: [ master ]
+    branches:
+      - master
+      - 'dev/**'
 
 permissions:
   id-token: write
