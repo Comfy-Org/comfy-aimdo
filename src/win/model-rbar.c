@@ -46,7 +46,7 @@ LONG CALLBACK PageFaultHandler(PEXCEPTION_POINTERS ExceptionInfo) {
             return EXCEPTION_CONTINUE_SEARCH;
         }
 
-        if (!MapViewOfFile3(res->hMapping, NULL, res->base_address, 0, 0,
+        if (!MapViewOfFile3(res->hMapping, GetCurrentProcess(), res->base_address, 0, res->size,
                             MEM_REPLACE_PLACEHOLDER, PAGE_READONLY, NULL, 0)) {
             log(ERROR, "VEH: MapViewOfFileEx failed. Address likely occupied. OS Error: %lu\n", GetLastError());
             return EXCEPTION_CONTINUE_SEARCH;
