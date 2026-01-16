@@ -94,7 +94,8 @@ def init():
         lib.wddm_cleanup.argtypes = []
         lib.wddm_cleanup.restype = None
 
-        # RBAR (windows only for the moment)
+        ## RBAR (windows only for the moment)
+
         lib.rbar_allocate.argtypes = [ctypes.c_char_p]
         lib.rbar_allocate.restype = ctypes.c_void_p
 
