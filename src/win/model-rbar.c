@@ -145,7 +145,7 @@ void unmap_all() {
         if (!res->base_address || !res->is_mapped) {
             continue;
         }
-        if (!UnmapViewOfFile3(res->base_address, NULL, 0, MEM_PRESERVE_PLACEHOLDER, NULL)) {
+        if (!UnmapViewOfFile2(GetCurrentProcess(), res->base_address, MEM_PRESERVE_PLACEHOLDER)) {
             log(ERROR, "RBAR: Atomic unmap failed at %p. Error: %lu\n", res->base_address, GetLastError());
             continue;
         }
