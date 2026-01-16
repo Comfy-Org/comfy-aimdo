@@ -56,18 +56,31 @@ LONG CALLBACK PageFaultHandler(PEXCEPTION_POINTERS ExceptionInfo) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-SHARED_EXPORT
-void init_parking_lot() {
+static bool one_time_setup_done;
+
+static inline bool one_time_setup() {
+    if (one_time_setup_done) {
+        return true;
+    }
     log(DEBUG, "VEH: Registering FaultHandler\n");
     if (!AddVectoredExceptionHandler(1, PageFaultHandler)) {
         log(ERROR, "VEH: Failed to register Exception Handler!\n");
+        return false;
     }
+    one_time_setup_done = true;
+    return true;
 }
 
+
 SHARED_EXPORT
-void* reserve_mmap_file(char *file_path) {
+void *rbar_allocate(char *file_path) {
     int i;
     MMAPReservation *res;
+
+    if (!one_time_setup()) {
+        return NULL;
+    }
+
     for (i = 0; i < MAX_RESERVATIONS; i++) {
         res = &g_reservations[i];
         if (!res->base_address) {
@@ -106,7 +119,7 @@ void* reserve_mmap_file(char *file_path) {
 }
 
 SHARED_EXPORT
-void unreserve_mmap_file(void *base_address) {
+void rbar_deallocate(void *base_address) {
     for (int i = 0; i < MAX_RESERVATIONS; i++) {
         MMAPReservation* res = &g_reservations[i];
         if (res->base_address != base_address) {
@@ -138,7 +151,7 @@ void unreserve_mmap_file(void *base_address) {
 }
 
 SHARED_EXPORT
-void unmap_all() {
+void rbars_unmap_all() {
     log(DEBUG, "VBAR: Clearing all active mappings to non-committed state...\n");
     for (int i = 0; i < MAX_RESERVATIONS; i++) {
         MMAPReservation* res = &g_reservations[i];
