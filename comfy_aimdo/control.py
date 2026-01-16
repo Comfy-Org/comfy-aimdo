@@ -35,6 +35,8 @@ def init():
         logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia GPUs")
         return False
 
+    ## Logging
+
     lib.set_log_level_none.argtypes = []
     lib.set_log_level_none.restype = None
 
@@ -56,13 +58,52 @@ def init():
     lib.set_log_level_verbose.argtypes = []
     lib.set_log_level_verbose.restype = None
 
+    ## VBAR
+
+    lib.vbar_allocate.argtypes = [ctypes.c_uint64, ctypes.c_int]
+    lib.vbar_allocate.restype = ctypes.c_void_p
+
+    lib.vbar_prioritize.argtypes = [ctypes.c_void_p]
+
+    lib.vbar_deprioritize.argtypes = [ctypes.c_void_p]
+
+    lib.vbar_get.argtypes = [ctypes.c_void_p]
+    lib.vbar_get.restype = ctypes.c_uint64
+
+    lib.vbar_free.argtypes = [ctypes.c_void_p]
+
+    lib.vbar_fault.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint32)]
+    lib.vbar_fault.restype = ctypes.c_int
+
+    lib.vbar_unpin.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
+
+    lib.vbar_loaded_size.argtypes = [ctypes.c_void_p]
+    lib.vbar_loaded_size.restype = ctypes.c_size_t
+
+    lib.vbar_free_memory.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.vbar_free_memory.restype = ctypes.c_uint64
+
+
     if platform.system() == "Windows":
+
+        ## WDDM
 
         lib.wddm_init.argtypes = [ctypes.c_int]
         lib.wddm_init.restype = ctypes.c_bool
 
         lib.wddm_cleanup.argtypes = []
         lib.wddm_cleanup.restype = None
+
+        # RBAR (windows only for the moment)
+        lib.rbar_allocate.argtypes = [ctypes.c_char_p]
+        lib.rbar_allocate.restype = ctypes.c_void_p
+
+        lib.rbar_unreserve.argtypes = [ctypes.c_void_p]
+        lib.rbar_unreserve.restype = None
+
+        lib.rbars_unmap_all.argtypes = []
+        lib.rbars_unmap_all.restype = None
+
 
     return True
 
