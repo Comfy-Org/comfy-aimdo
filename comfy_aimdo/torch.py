@@ -98,7 +98,7 @@ def safetensors_load_rbar(ckpt, autoref=True):
         # View into the lazy-loaded memory
         sd[name] = data_area[start:end].view(_TYPES[info["dtype"]]).reshape(info["shape"])
 
-    return sd, rbar
+    return sd, header.get("__metadata__", {}), rbar
 
 
 def get_torch_allocator():
