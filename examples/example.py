@@ -8,7 +8,9 @@ import comfy_aimdo.torch
 import comfy_aimdo.control
 from comfy_aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare, vbars_analyze
 
+comfy_aimdo.control.init()
 comfy_aimdo.control.set_log_debug()
+comfy_aimdo.control.init_device(0)
 
 allocator = comfy_aimdo.torch.CUDAPluggableAllocator()
 
