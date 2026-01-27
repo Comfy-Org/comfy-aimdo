@@ -29,10 +29,19 @@ typedef struct ModelVBAR {
 ModelVBAR highest_priority;
 ModelVBAR lowest_priority;
 
+static inline void one_time_setup() {
+    if (!highest_priority.lower) {
+        assert(!lowest_priority.higher);
+        highest_priority.lower = &lowest_priority;
+        lowest_priority.higher = &highest_priority;
+    }
+}
+
 SHARED_EXPORT
 void vbars_analyze() {
     size_t calculated_total_vram = 0;
 
+    one_time_setup();
     log(DEBUG, "---------------- VBAR Usage ---------------\n")
 
     for (ModelVBAR *i = lowest_priority.higher; i && i != &highest_priority; i = i->higher) {
@@ -91,6 +100,8 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
 void vbars_free(size_t size) {
     size_t pages_needed = VBAR_GET_PAGE_NR_UP(size);
 
+    one_time_setup();
+
     if (!size) {
         return;
     }
@@ -127,14 +138,6 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
                 cursor = move_cursor_to_absent(mv, cursor + 1);
             }
         }
-    }
-}
-
-static inline void one_time_setup() {
-    if (!highest_priority.lower) {
-        assert(!lowest_priority.higher);
-        highest_priority.lower = &lowest_priority;
-        lowest_priority.higher = &highest_priority;
     }
 }
 
