@@ -56,6 +56,9 @@ def init():
     lib.set_log_level_verbose.argtypes = []
     lib.set_log_level_verbose.restype = None
 
+    lib.get_total_vram_usage.argtypes = []
+    lib.get_total_vram_usage.restype = ctypes.c_uint64
+
     if platform.system() == "Windows":
 
         lib.wddm_init.argtypes = [ctypes.c_int]
@@ -87,3 +90,6 @@ def set_log_warning(): lib.set_log_level_warning()
 def set_log_info(): lib.set_log_level_info()
 def set_log_debug(): lib.set_log_level_debug()
 def set_log_verbose(): lib.set_log_level_verbose()
+
+def get_total_vram_usage():
+    return lib.get_total_vram_usage()

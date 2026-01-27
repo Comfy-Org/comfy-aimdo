@@ -60,7 +60,7 @@ void log_reset_shots();
 #define log(level, ...) do_log(false, level, __VA_ARGS__)
 #define log_shot(level, ...) do_log(true, level, __VA_ARGS__)
 
-extern uint64_t total_vram_usage; /* model_vbar.c */
+extern uint64_t total_vram_usage; /* control.c */
 
 static inline int check_cu_impl(CUresult res, const char *label) {
     if (res != CUDA_SUCCESS && res != CUDA_ERROR_OUT_OF_MEMORY) {

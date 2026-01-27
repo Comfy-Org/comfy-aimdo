@@ -29,8 +29,6 @@ typedef struct ModelVBAR {
 ModelVBAR highest_priority;
 ModelVBAR lowest_priority;
 
-uint64_t total_vram_usage;
-
 SHARED_EXPORT
 void vbars_analyze() {
     size_t calculated_total_vram = 0;
