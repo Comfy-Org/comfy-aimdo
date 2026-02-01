@@ -255,7 +255,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
             continue;
         }
 
-        if (wddm_budget_deficit(VBAR_PAGE_SIZE) ||
+        if (wddm_budget_deficit(mv->device, VBAR_PAGE_SIZE) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");

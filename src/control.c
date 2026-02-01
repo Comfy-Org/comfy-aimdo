@@ -3,6 +3,28 @@
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
 
+#define VRAM_HEADROOM (256 * 1024 * 1024)
+
+size_t cuda_budget_deficit(int device, size_t bytes) {
+    size_t free_vram = 0, total_vram = 0;
+
+    ssize_t deficit = (ssize_t)(total_vram_usage + bytes + VRAM_HEADROOM) - vram_capacity;
+
+    if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+        ssize_t deficit_cuda = (ssize_t)(VRAM_HEADROOM + bytes) - free_vram;
+
+        if (deficit_cuda > deficit) {
+            deficit = deficit_cuda;
+        }
+    }
+
+    if (deficit > 0) {
+        log(DEBUG, "Imminent VRAM OOM detected. Deficit: %zd MB\n", deficit / (1024 * 1024));
+    }
+
+    return (deficit > 0) ? (size_t)deficit : 0;
+}
+
 SHARED_EXPORT
 uint64_t get_total_vram_usage() {
     return total_vram_usage;

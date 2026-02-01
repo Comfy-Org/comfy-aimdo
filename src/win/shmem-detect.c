@@ -5,8 +5,6 @@
 
 #include <cuda.h>
 
-typedef SSIZE_T ssize_t;
-
 static struct {
     IDXGIFactory4 *factory;
     IDXGIAdapter3 *adapter;
@@ -65,7 +63,7 @@ fail:
 /* FIXME: This should be 0 if sysmem fallback is disabled by the user */
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
 
-size_t wddm_budget_deficit(size_t bytes)
+size_t wddm_budget_deficit(int device, size_t bytes)
 {
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
     uint64_t effective_budget = vram_capacity;

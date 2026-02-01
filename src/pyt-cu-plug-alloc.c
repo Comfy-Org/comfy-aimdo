@@ -42,7 +42,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         * what we can from cuda before we OOM so that the VBAR free routine
         * doesn't over-free
         */
-    vbars_free(wddm_budget_deficit(size));
+    vbars_free(wddm_budget_deficit(device, size));
     if ((err = three_stooges(entry->ptr, size, device, &entry->handle)) != CUDA_SUCCESS) {
         if (err != CUDA_ERROR_OUT_OF_MEMORY) {
             log(ERROR, "VRAM Allocation failed (non OOM)\n");
