@@ -10,14 +10,21 @@
 #include <stdlib.h>
 #include <assert.h>
 
+/* control.c */
+size_t cuda_budget_deficit(int device, size_t bytes);
+
 #if defined(_WIN32) || defined(_WIN64)
 
 #define SHARED_EXPORT __declspec(dllexport)
 
+#include <BaseTsd.h>
+
+typedef SSIZE_T ssize_t;
+
 /* shmem-detect.c */
 bool plat_init(CUdevice dev);
 void plat_cleanup();
-size_t wddm_budget_deficit(size_t bytes);
+size_t wddm_budget_deficit(int device, size_t bytes);
 
 #else
 
@@ -25,7 +32,9 @@ size_t wddm_budget_deficit(size_t bytes);
 
 static inline bool plat_init(CUdevice dev) { return true; }
 static inline void plat_cleanup() {}
-static inline size_t wddm_budget_deficit(size_t bytes) { return 0; }
+static inline size_t wddm_budget_deficit(int device, size_t bytes) {
+    return cuda_budget_deficit(device, bytes);
+}
 
 #endif
 
