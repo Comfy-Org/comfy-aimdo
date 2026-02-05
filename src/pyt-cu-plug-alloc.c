@@ -22,7 +22,7 @@ static inline unsigned int vmm_hash(CUdeviceptr ptr) {
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     CUresult err;
-    VMMEntry* entry = calloc(1, sizeof(*entry));
+    VMMEntry* entry = (VMMEntry*) calloc(1, sizeof(*entry));
 
     log(VERBOSE, "%s (start): size=%zuk, device=%d\n", __func__, size / K, device);
 
