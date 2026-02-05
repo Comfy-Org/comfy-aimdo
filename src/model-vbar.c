@@ -44,7 +44,7 @@ void vbars_analyze() {
     one_time_setup();
     log(DEBUG, "---------------- VBAR Usage ---------------\n")
 
-    for (ModelVBAR *i = lowest_priority.higher; i && i != &highest_priority; i = i->higher) {
+    for (ModelVBAR *i = (ModelVBAR*)lowest_priority.higher; i && i != (ModelVBAR*) &highest_priority; i = (ModelVBAR*) i->higher) {
         size_t actual_resident_count = 0;
 
         for (size_t p = 0; p < i->nr_pages; p++) {
@@ -108,8 +108,8 @@ void vbars_free(size_t size) {
 
     CHECK_CU(cuCtxSynchronize());
 
-    for (ModelVBAR *i = lowest_priority.higher; pages_needed && i != &highest_priority;
-         i = i->higher) {
+    for (ModelVBAR *i = (ModelVBAR*) lowest_priority.higher; pages_needed && i != (ModelVBAR*) &highest_priority;
+         i = (ModelVBAR*) i->higher) {
         for (;pages_needed && i->watermark; i->watermark--) {
             if (mod1(i, i->watermark - 1, true, false)) {
                 pages_needed--;
@@ -130,9 +130,9 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
 
     CHECK_CU(cuCtxSynchronize());
 
-    for (ModelVBAR *i = lowest_priority.higher;
-         cursor < target && cursor < mv->watermark && i != &highest_priority;
-         i = i->higher) {
+    for (ModelVBAR *i = (ModelVBAR*) lowest_priority.higher;
+         cursor < target && cursor < mv->watermark && i != (ModelVBAR*) &highest_priority;
+         i = (ModelVBAR*) i->higher) {
         for (; cursor < target && cursor < mv->watermark && i->watermark; i->watermark--) {
             if (mod1(i, i->watermark - 1, true, false)) {
                 cursor = move_cursor_to_absent(mv, cursor + 1);
@@ -175,7 +175,7 @@ void *vbar_allocate(uint64_t size, int device) {
     }
     size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
-    if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
+    if (!(mv = (ModelVBAR*) calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
         log(CRITICAL, "Host OOM\n");
         return NULL;
     }
