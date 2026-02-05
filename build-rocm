@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# You need CUDA development files installed to run hipify-clang, alongside the rocm stuff
+# Works with at least CUDA 12.9 and ROCM 7.2 on RHEL 9
+
+mkdir -p hip_src
+cp src/*.c src/*.h hip_src/
+hipify-clang  --default-preprocessor --inplace hip_src/*.c hip_src/*.h
+# hack, hipCtxSynchronize is deprecated since forever and does not work
+sed -i 's/hipCtxSynchronize/hipDeviceSynchronize/g' hip_src/*.c
+
+hipcc $(hipconfig -C) -o comfy_aimdo/aimdo.so -fPIC -shared hip_src/*.c
