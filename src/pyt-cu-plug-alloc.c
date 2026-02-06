@@ -3,7 +3,7 @@
 #define MIN_ALLOC_SHIFT 21
 #define MIN_ALLOC       (1 << MIN_ALLOC_SHIFT) /*2 MB as per Cuda page sizes and pytorch cacheing alloc */
 
-#define VMM_HASH_SIZE   (1 << 12) 
+#define VMM_HASH_SIZE   (1 << 12)
 
 typedef struct VMMEntry {
     CUdeviceptr ptr;

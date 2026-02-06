@@ -197,7 +197,7 @@ void *vbar_allocate(uint64_t size, int device) {
 
     mv->device = device;
     mv->nr_pages = mv->watermark = nr_pages;
-    
+
     insert_vbar(mv);
 
     log(DEBUG, "%s (return): vbar=%p\n", __func__, (void *)mv);
