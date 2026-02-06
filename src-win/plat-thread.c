@@ -16,7 +16,7 @@ void mutex_destroy(Mutex m) {
     CloseHandle(m);
 }
 
-bool thread_create(Thread *t, THREAD_FUNC (*proc)(void *), void *arg) {
+bool thread_create(Thread *t, ThreadProc proc, void *arg) {
     *t = CreateThread(NULL, 0, proc, arg, 0, NULL);
     return *t != NULL;
 }
