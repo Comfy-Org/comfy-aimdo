@@ -8,12 +8,14 @@
 typedef HANDLE Mutex;
 typedef HANDLE Thread;
 typedef DWORD (WINAPI *ThreadProc)(void*);
+#define THREAD_FUNC DWORD WINAPI
 #else
 #include <pthread.h>
 #include <unistd.h>
 typedef pthread_mutex_t* Mutex;
 typedef pthread_t Thread;
 typedef void* (*ThreadProc)(void*);
+#define THREAD_FUNC void *
 #endif
 
 Mutex mutex_create(void);
