@@ -68,7 +68,7 @@ def aimdo_torch_setup_thread(device):
     #leak the actual MemPool. Might need to sigaction() on process exit to
     #just discard the destructor sigabrt for cleanliness.
     MEMPOOL_PURGATORY.append(mempool)
-    midx = mempool.id()
+    midx = mempool.id
     _cuda_beginAllocateCurrentThreadToPool(0, midx)
     dummy = torch.empty(1, device=device) #Strong refs the real pool object
     _cuda_releasePool(0, midx) #one for the allocation context
