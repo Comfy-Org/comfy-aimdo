@@ -7,16 +7,16 @@ bool torch_init() {
     void* handle = RTLD_DEFAULT;
 
     // Use the exact signature for the cast to satisfy GCC
-    empty_cache = (void(*)(torch_mempool_t))dlsym(handle, "_ZN3c104cuda21CUDACachingAllocator10emptyCacheENS0_11MempoolId_tE");
+    empty_cache = (void(*)(MempoolId_t))dlsym(handle, "_ZN3c104cuda21CUDACachingAllocator10emptyCacheENS0_11MempoolId_tE");
 
     if (!empty_cache) {
-        empty_cache = (void(*)(torch_mempool_t))dlsym(handle, "_ZN3c104cuda21CUDACachingAllocator10emptyCacheEv");
+        empty_cache = (void(*)(MempoolId_t))dlsym(handle, "_ZN3c104cuda21CUDACachingAllocator10emptyCacheEv");
     }
 
     if (!empty_cache) {
-        log(L_ERROR, "torch_init: Could not resolve Linux C++ emptyCache symbol.\n");
+        log(ERROR, "torch_init: Could not resolve Linux C++ emptyCache symbol.\n");
     } else {
-        log(L_DEBUG, "torch_init: Hooked Linux C++ emptyCache at %p\n", (void*)empty_cache);
+        log(DEBUG, "torch_init: Hooked Linux C++ emptyCache at %p\n", (void*)empty_cache);
     }
 
     return true;
