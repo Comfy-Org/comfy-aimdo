@@ -60,7 +60,9 @@ bool vrambuf_grow(void *arg, size_t required_size) {
 
         if (err == CUDA_ERROR_OUT_OF_MEMORY && empty_cache) {
             log(DEBUG, "Pytorch allocator attempt still exceeds available VRAM - clearing cache ...\n");
+            CHECK_CU(cuCtxSynchronize());
             empty_cache();
+            CHECK_CU(cuCtxSynchronize());
             err = three_stooges(buf->base_ptr + buf->allocated, to_allocate, buf->device, &handle);
         }
 
