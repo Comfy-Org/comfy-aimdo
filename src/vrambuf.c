@@ -1,6 +1,6 @@
 #include "vrambuf.h"
 
-#define VRAM_CHUNK_SIZE      (1ULL * 1024 * 1024)
+#define VRAM_CHUNK_SIZE      (2ULL * 1024 * 1024)
 
 SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
