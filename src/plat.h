@@ -132,3 +132,6 @@ fail:
 
 /* model_vbar.c */
 void vbars_free(size_t size);
+
+/* torch.c */
+extern void (*empty_cache)(void);

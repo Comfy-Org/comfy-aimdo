@@ -25,6 +25,7 @@ SHARED_EXPORT
 bool vrambuf_grow(void *arg, size_t required_size) {
     VramBuffer *buf = (VramBuffer *)arg;
     size_t grow_to;
+    size_t deficit;
     CUmemGenericAllocationHandle handle;
     CUresult err;
 
@@ -43,6 +44,10 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         grow_to = buf->max_size;
     }
 
+    deficit = wddm_budget_deficit(buf->device, grow_to - buf->allocated);
+    if (deficit && empty_cache) {
+        empty_cache();
+    }
     vbars_free(wddm_budget_deficit(buf->device, grow_to - buf->allocated));
     while (buf->allocated < grow_to) {
         size_t to_allocate = grow_to - buf->allocated;
