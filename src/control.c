@@ -1,6 +1,6 @@
 #include "plat.h"
 
-void (*empty_cache)(void);
+void (*empty_cache)(MempoolId_t);
 
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
