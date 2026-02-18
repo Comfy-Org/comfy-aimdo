@@ -146,5 +146,6 @@ static inline void torch_empty_cache() {
         return;
     }
     CHECK_CU(cuCtxSynchronize());
+    log(VERBOSE, "%s: executed", __func__);
     empty_cache();
 }

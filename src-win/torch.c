@@ -8,7 +8,7 @@ bool torch_init() {
     HMODULE hModule = GetModuleHandleA("c10_cuda.dll");
  
     if (hModule == NULL) {
-        log(ERROR, "c10_cuda.dll not found in process memory. Running without on-fly GC. This lowers your usable VRAM.\n");
+        log(ERROR, "%s: c10_cuda.dll not found in process memory. Running without on-fly GC. This lowers your usable VRAM.\n", __func__);
         return true;
     }
 
@@ -18,8 +18,9 @@ bool torch_init() {
     empty_cache = (void*)GetProcAddress(hModule, "?emptyCache@CUDACachingAllocator@cuda@c10@@SAXXZ");
 
     if (!empty_cache) {
-        log(ERROR, "c10_cuda.dll does not contain emptyCache. Running without on-fly GC. This lowers your usable VRAM.\n");
+        log(ERROR, "%s: c10_cuda.dll does not contain emptyCache. Running without on-fly GC. This lowers your usable VRAM.\n", __func__);
     }
+    log(DEBUG, "%s: Torch empty_cache function found\n", __func__);
     return true;
 }
 
