@@ -6,20 +6,6 @@ from . import control
 
 lib = control.lib
 
-def empty_cache_callback():
-    torch.cuda.empty_cache()
-
-EMPTY_CACHE_CALLBACK_TYPE = ctypes.CFUNCTYPE(None)
-empty_cache_callback_ref = EMPTY_CACHE_CALLBACK_TYPE(empty_cache_callback)
-
-# Bindings
-if lib is not None:
-    lib.set_empty_cache.argtypes = [EMPTY_CACHE_CALLBACK_TYPE]
-    lib.vbar_allocate.restype = None
-
-def install_cache_callback():
-    lib.set_empty_cache(empty_cache_callback_ref)
-
 def get_tensor_from_raw_ptr(ptr, size, device):
     container = {
         "shape": (size,),
@@ -74,3 +60,24 @@ def aimdo_torch_setup_thread(device):
     _cuda_releasePool(0, midx) #one for the allocation context
     _cuda_releasePool(0, midx) #one for the pool itself
     return dummy
+
+def aimdo_torch_cleanup_thread():
+    pass
+
+def empty_cache_callback():
+    #Bail on the aimdo allocator. It can't do anything anymore as there
+    #is nothing left to free, and the default mempool has better garbage
+    #collector sematics. This baiscally enters --lowvram mode on the fly.
+    aimdo_torch_cleanup_thread()
+    torch.cuda.empty_cache()
+
+EMPTY_CACHE_CALLBACK_TYPE = ctypes.CFUNCTYPE(None)
+empty_cache_callback_ref = EMPTY_CACHE_CALLBACK_TYPE(empty_cache_callback)
+
+# Bindings
+if lib is not None:
+    lib.set_empty_cache.argtypes = [EMPTY_CACHE_CALLBACK_TYPE]
+    lib.vbar_allocate.restype = None
+
+def install_cache_callback():
+    lib.set_empty_cache(empty_cache_callback_ref)
