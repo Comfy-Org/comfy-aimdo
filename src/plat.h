@@ -132,6 +132,12 @@ fail:
 
 /* model_vbar.c */
 void vbars_free(size_t size);
+void vbars_analyze();
 
 /* torch.c */
 extern void (*empty_cache)(void);
+
+void allocations_analyze();
+
+SHARED_EXPORT
+void aimdo_analyze();

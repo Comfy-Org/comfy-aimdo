@@ -40,9 +40,6 @@ static inline void one_time_setup() {
 
 static bool vbars_dirty;
 
-void analyze_allocations();
-
-SHARED_EXPORT
 void vbars_analyze() {
     size_t calculated_total_vram = 0;
 
@@ -84,10 +81,7 @@ void vbars_analyze() {
             (void*)i, (actual_resident_count * VBAR_PAGE_SIZE) / M);
     }
 
-    log(DEBUG, "Global total_vram_usage: %llu MB (Total for VBARs: %zu MB)\n",
-        (ull)(total_vram_usage / M), calculated_total_vram / M);
-
-    analyze_allocations();
+    log(DEBUG, "Total VRAM for VBARs: %zu MB\n", calculated_total_vram / M);
 }
 
 static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {

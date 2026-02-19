@@ -35,38 +35,11 @@ def init():
         logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia GPUs")
         return False
 
-    lib.set_log_level_none.argtypes = []
-    lib.set_log_level_none.restype = None
-
-    lib.set_log_level_critical.argtypes = []
-    lib.set_log_level_critical.restype = None
-
-    lib.set_log_level_error.argtypes = []
-    lib.set_log_level_error.restype = None
-
-    lib.set_log_level_warning.argtypes = []
-    lib.set_log_level_warning.restype = None
-
-    lib.set_log_level_info.argtypes = []
-    lib.set_log_level_info.restype = None
-
-    lib.set_log_level_debug.argtypes = []
-    lib.set_log_level_debug.restype = None
-
-    lib.set_log_level_verbose.argtypes = []
-    lib.set_log_level_verbose.restype = None
-
-    lib.set_log_level_vverbose.argtypes = []
-    lib.set_log_level_vverbose.restype = None
-
     lib.get_total_vram_usage.argtypes = []
     lib.get_total_vram_usage.restype = ctypes.c_uint64
 
     lib.init.argtypes = [ctypes.c_int]
     lib.init.restype = ctypes.c_bool
-
-    lib.cleanup.argtypes = []
-    lib.cleanup.restype = None
 
     try:
         from . import torch
@@ -96,6 +69,11 @@ def set_log_info(): lib.set_log_level_info()
 def set_log_debug(): lib.set_log_level_debug()
 def set_log_verbose(): lib.set_log_level_verbose()
 def set_log_vverbose(): lib.set_log_level_vverbose()
+
+def analyze():
+    if lib is None:
+        return
+    lib.aimdo_analyze()
 
 def get_total_vram_usage():
     return 0 if lib is None else lib.get_total_vram_usage()

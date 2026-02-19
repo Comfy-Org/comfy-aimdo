@@ -12,11 +12,11 @@ static inline unsigned int vmm_hash(CUdeviceptr ptr) {
     return ((uintptr_t)(void *)ptr >> MIN_ALLOC_SHIFT) % VMM_HASH_SIZE;
 }
 
-void analyze_allocations() {
+void allocations_analyze() {
     size_t total_size = 0;
     int count = 0;
 
-    log(INFO, "--- Allocation Analysis Start ---\n");
+    log(DEBUG, "--- Allocation Analysis Start ---\n");
 
     for (int i = 0; i < VMM_HASH_SIZE; i++) {
         VramBuffer *entry = vmm_table[i];
@@ -27,7 +27,7 @@ void analyze_allocations() {
             // Assuming VramBuffer has size fields (adjust names if different)
             size_t s = entry->allocated; 
 
-            log(INFO, "  [Bucket %4d] Ptr: %p | Size: %7zuk\n", 
+            log(DEBUG, "  [Bucket %4d] Ptr: %p | Size: %7zuk\n",
                 i, ptr, s / K);
 
             total_size += s;
@@ -37,10 +37,7 @@ void analyze_allocations() {
         }
     }
 
-    log(INFO, "--- Summary ---\n");
-    log(INFO, "  Active Allocations: %d\n", count);
-    log(INFO, "  Total Real Size:    %7zu MB\n", total_size / M);
-    log(INFO, "--- Analysis End ---\n");
+    log(DEBUG, "%d Active Allocations for a total of %7zu MB\n", count, total_size / M);
 }
 
 SHARED_EXPORT
@@ -62,6 +59,8 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     }
     if (!vrambuf_grow(entry, size)) {
         vrambuf_destroy(entry);
+        log(DEBUG, "%s: Dumping stats at time of OOM\n");
+        aimdo_analyze();
         return NULL;
     }
 
