@@ -6,32 +6,25 @@ import logging
 
 lib = None
 
-def get_lib_path():
-    base_path = Path(__file__).parent.resolve()
-    lib_name = None
-
-    system = platform.system()
-    if system == "Windows":
-        lib_name = "aimdo.dll"
-    elif system == "Linux":
-        lib_name = "aimdo.so"
-
-    return None if lib_name is None else str(base_path / lib_name)
-
 def init():
     global lib
 
     if lib is not None:
         return True
 
-    lib_path = get_lib_path()
-    if lib_path is None:
-        logging.info(f"Unsupported platform for comfy-aimdo: {platform.system()}")
-        return False
     try:
-        lib = ctypes.CDLL(lib_path)
+        base_path = Path(__file__).parent.resolve()
+        system = platform.system()
+        if system == "Windows":
+            lib = ctypes.CDLL(str(base_path / "aimdo.dll"))
+        elif system == "Linux":
+            lib = ctypes.CDLL(str(base_path / "aimdo.so"), mode=258)
+        else:
+            logging.info(f"comfy-aimdo os not supported {system}")
+            logging.info(f"NOTE: comfy-aimdo is currently only support for Windows and Linux")
+            return False
     except Exception as e:
-        logging.info(f"comfy-aimdo failed to load: {lib_path}: {e}")
+        logging.info(f"comfy-aimdo failed to load: {e}")
         logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia GPUs")
         return False
 

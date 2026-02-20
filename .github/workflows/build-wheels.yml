@@ -42,9 +42,15 @@ jobs:
           mkdir C:\CUDA_SDK -Force
           tar -xf win-cuda-raw.tgz -C C:\CUDA_SDK
 
+          # Add Detours
+          git clone --depth 1 https://github.com/microsoft/Detours.git C:\Detours
+          cd C:\Detours
+
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
-          
+
+          cmd.exe /c "call `"$vcvars`" && cd /d C:\Detours && nmake"
+
           if (Test-Path "C:\CUDA_SDK\include\crt\host_defines.h") {
               Write-Host "✅ CUDA SDK successfully integrated."
           } else {
@@ -60,8 +66,9 @@ jobs:
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
           cl.exe /LD /O2 ^
             src/*.c src-win/*.c ^
-            /Isrc /IC:/CUDA_SDK/include /Fe:comfy_aimdo/aimdo.dll ^
-            /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
+            /Isrc /IC:/CUDA_SDK/include /IC:/Detours/include /Fe:comfy_aimdo/aimdo.dll ^
+            /link /LIBPATH:C:/CUDA_SDK/lib/x64 /LIBPATH:C:/Detours/lib.X64 ^
+            cuda.lib cudart.lib dxgi.lib dxguid.lib detours.lib
         shell: cmd
 
       - name: Build default Stub Wheel
