@@ -19,11 +19,14 @@ static inline unsigned int size_hash(void *ptr) {
 int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
     CUdeviceptr dptr;
     CUresult status;
+    CUdevice device;
 
     log(VVERBOSE, "%s (start) size=%zuk stream=%p\n", __func__, size / K, hStream);
-    if (!devPtr) {
+    if (!devPtr ||
+        !CHECK_CU(cuCtxGetDevice(&device))) {
         return 1;
     }
+    vbars_free(wddm_budget_deficit(device, size));
 
     if (CHECK_CU(cuMemAllocAsync(&dptr, size, (CUstream)hStream))) {
         *devPtr = (void *)dptr;
