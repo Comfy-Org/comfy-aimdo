@@ -10,7 +10,7 @@ static struct {
     IDXGIAdapter3 *adapter;
 } G_WDDM;
 
-bool plat_init(CUdevice dev)
+bool aimdo_wddm_init(CUdevice dev)
 {
     int fail_code = 1;
     LUID cuda_luid;
@@ -87,7 +87,7 @@ size_t wddm_budget_deficit(int device, size_t bytes)
     return (deficit > 0) ? (size_t)deficit : 0;
 }
 
-void plat_cleanup()
+void aimdo_wddm_cleanup()
 {
     if (G_WDDM.adapter) {
         G_WDDM.adapter->lpVtbl->Release(G_WDDM.adapter);

@@ -42,9 +42,15 @@ jobs:
           mkdir C:\CUDA_SDK -Force
           tar -xf win-cuda-raw.tgz -C C:\CUDA_SDK
 
+          # Add Detours
+          git clone --depth 1 https://github.com/microsoft/Detours.git C:\Detours
+          cd C:\Detours
+
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
-          
+
+          cmd.exe /c "call `"$vcvars`" && cd /d C:\Detours && nmake"
+
           if (Test-Path "C:\CUDA_SDK\include\crt\host_defines.h") {
               Write-Host "✅ CUDA SDK successfully integrated."
           } else {
@@ -59,9 +65,10 @@ jobs:
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
           call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
           cl.exe /LD /O2 ^
-            src/vrambuf.c src/control.c src/model-vbar.c src/pyt-cu-plug-alloc.c src/debug.c src/win/shmem-detect.c ^
-            /Isrc /IC:/CUDA_SDK/include /Fe:comfy_aimdo/aimdo.dll ^
-            /link /LIBPATH:C:/CUDA_SDK/lib/x64 cuda.lib cudart.lib dxgi.lib dxguid.lib
+            src/*.c src-win/*.c ^
+            /Isrc /IC:/CUDA_SDK/include /IC:/Detours/include /Fe:comfy_aimdo/aimdo.dll ^
+            /link /LIBPATH:C:/CUDA_SDK/lib/x64 /LIBPATH:C:/Detours/lib.X64 ^
+            cuda.lib cudart.lib dxgi.lib dxguid.lib detours.lib
         shell: cmd
 
       - name: Build default Stub Wheel
@@ -84,8 +91,8 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: custom-cuda-builder 
           CIBW_BUILD: "cp39-manylinux_x86_64 cp39-win_amd64"
           CIBW_BEFORE_BUILD_LINUX: >
-            gcc -shared -fPIC -O2 -g src/vrambuf.c src/control.c src/pyt-cu-plug-alloc.c src/model-vbar.c src/debug.c
-            -I/usr/local/cuda-12.1/include 
+            gcc -shared -fPIC -O2 -g src/*.c
+            -Isrc -I/usr/local/cuda-12.1/include
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
             -lcuda -o comfy_aimdo/aimdo.so
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"

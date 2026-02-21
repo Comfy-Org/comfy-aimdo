@@ -12,6 +12,31 @@ static inline unsigned int vmm_hash(CUdeviceptr ptr) {
     return ((uintptr_t)(void *)ptr >> MIN_ALLOC_SHIFT) % VMM_HASH_SIZE;
 }
 
+void allocations_analyze() {
+    size_t total_size = 0;
+    int count = 0;
+
+    log(DEBUG, "--- Allocation Analysis Start ---\n");
+
+    for (int i = 0; i < VMM_HASH_SIZE; i++) {
+        VramBuffer *entry = vmm_table[i];
+        while (entry) {
+            void* ptr = (void*)vrambuf_get(entry);
+            size_t s = entry->allocated;
+
+            log(DEBUG, "  [Bucket %4d] Ptr: %p | Size: %7zuk\n",
+                i, ptr, s / K);
+
+            total_size += s;
+            count++;
+
+            entry = entry->next;
+        }
+    }
+
+    log(DEBUG, "%d Active Allocations for a total of %7zu MB\n", count, total_size / M);
+}
+
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     CUresult err;
@@ -44,6 +69,19 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     return (void *)vrambuf_get(entry);
 }
 
+int aimdo_cuda_malloc(void **dev_ptr, size_t size) {
+    int device;
+    if (!dev_ptr) {
+        return 1; /* cudaErrorInvalidValue */
+    }
+    if (!CHECK_CU(cuCtxGetDevice(&device))) {
+        return 101; /* cudaErrorInvalidDevice */
+    }
+
+    *dev_ptr = alloc_fn(size, device, NULL);
+    return *dev_ptr ? 0 /* cudaSuccess */ : 2 /* cudaErrorMemoryAllocation */;
+}
+
 SHARED_EXPORT
 void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
     log_shot(DEBUG, "Pytorch is freeing VRAM ...\n");
@@ -65,4 +103,13 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
     }
 
     log(ERROR, "%s could not find VRAM@%p\n", __func__, ptr);
+}
+
+int aimdo_cuda_free(void *dev_ptr) {
+    int device;
+    if (!CHECK_CU(cuCtxGetDevice(&device))) {
+        return 101; /* cudaErrorInvalidDevice */
+    }
+    free_fn(dev_ptr, 0, device, NULL);
+    return 0;
 }

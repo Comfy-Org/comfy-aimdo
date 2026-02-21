@@ -26,6 +26,20 @@ size_t cuda_budget_deficit(int device, size_t bytes) {
 }
 
 SHARED_EXPORT
+void aimdo_analyze() {
+    size_t free_bytes = 0, total_bytes = 0;
+
+    log(DEBUG, "--- VRAM Stats ---\n");
+
+    CHECK_CU(cuMemGetInfo(&free_bytes, &total_bytes));
+    log(DEBUG, "  Aimdo Recorded Usage:  %7zu MB\n", total_vram_usage / M);
+    log(DEBUG, "  Cuda:  %7zu MB / %7zu MB Free\n", free_bytes / M, total_bytes / M);
+
+    vbars_analyze();
+    allocations_analyze();
+}
+
+SHARED_EXPORT
 uint64_t get_total_vram_usage() {
     return total_vram_usage;
 }

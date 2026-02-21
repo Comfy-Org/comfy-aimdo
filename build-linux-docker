@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-SRCS="src/control.c src/debug.c src/model-vbar.c src/pyt-cu-plug-alloc.c"
+SRCS="src/*.c"
 docker build -t manylinux-cuda -f docker/cuda-on-manylinux.Dockerfile .
 docker run --rm -v $(pwd):/project -w /project manylinux-cuda \
     gcc -shared -o comfy_aimdo/aimdo.so -fPIC -Werror \

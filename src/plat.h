@@ -1,8 +1,14 @@
 #pragma once
 
 #include <cuda.h>
-#include <cuda_runtime_api.h>
 
+/* NOTE: cuda_runtime.h is banned here. Always use the driver APIs.
+ * Add duck-types here.
+ */
+
+typedef struct CUstream_st *cudaStream_t;
+
+#include <string.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -22,21 +28,43 @@ size_t cuda_budget_deficit(int device, size_t bytes);
 typedef SSIZE_T ssize_t;
 
 /* shmem-detect.c */
-bool plat_init(CUdevice dev);
-void plat_cleanup();
+bool aimdo_wddm_init(CUdevice dev);
+void aimdo_wddm_cleanup();
+/* cuda-detour.c */
+bool aimdo_setup_hooks();
+void aimdo_teardown_hooks();
+
 size_t wddm_budget_deficit(int device, size_t bytes);
 
 #else
 
 #define SHARED_EXPORT
 
-static inline bool plat_init(CUdevice dev) { return true; }
-static inline void plat_cleanup() {}
+/* On Linux we are the apparent implementation of cudart */
+#define aimdo_cuda_malloc cudaMalloc
+#define aimdo_cuda_free cudaFree
+#define aimdo_cuda_malloc_async cudaMallocAsync
+#define aimdo_cuda_free_async cudaFreeAsync
+
+static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
+static inline void aimdo_wddm_cleanup() {}
+static inline bool aimdo_setup_hooks() { return true; }
+static inline void aimdo_teardown_hooks() {}
+
 static inline size_t wddm_budget_deficit(int device, size_t bytes) {
     return cuda_budget_deficit(device, bytes);
 }
 
 #endif
+
+static inline bool plat_init(CUdevice dev) {
+    return aimdo_wddm_init(dev) &&
+           aimdo_setup_hooks();
+}
+static inline void plat_cleanup() {
+    aimdo_wddm_cleanup();
+    aimdo_teardown_hooks();
+}
 
 typedef unsigned long long ull;
 #define K 1024
@@ -132,3 +160,16 @@ fail:
 
 /* model_vbar.c */
 void vbars_free(size_t size);
+void vbars_analyze();
+
+/* pyt-cu-alloc.c */
+int aimdo_cuda_malloc(void **dev_ptr, size_t size);
+int aimdo_cuda_free(void *dev_ptr);
+int aimdo_cuda_malloc_async(void** devPtr, size_t size, void* hStream);
+int aimdo_cuda_free_async(void* devPtr, void* hStream);
+
+void allocations_analyze();
+
+/* control.c */
+SHARED_EXPORT
+void aimdo_analyze();
