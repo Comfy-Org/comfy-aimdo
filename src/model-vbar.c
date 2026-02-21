@@ -104,6 +104,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
 
 void vbars_free(size_t size) {
     size_t pages_needed = VBAR_GET_PAGE_NR_UP(size);
+    bool dirty = false;
 
     one_time_setup();
     vbars_dirty = true;
@@ -112,11 +113,13 @@ void vbars_free(size_t size) {
         return;
     }
 
-    CHECK_CU(cuCtxSynchronize());
-
     for (ModelVBAR *i = lowest_priority.higher; pages_needed && i != &highest_priority;
          i = i->higher) {
         for (;pages_needed && i->watermark > i->watermark_limit; i->watermark--) {
+            if (!dirty) {
+                CHECK_CU(cuCtxSynchronize());
+                dirty = true;
+            }
             if (mod1(i, i->watermark - 1, true, false)) {
                 pages_needed--;
             }
