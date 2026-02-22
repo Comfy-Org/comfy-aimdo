@@ -69,7 +69,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     return (void *)vrambuf_get(entry);
 }
 
-int aimdo_cuda_malloc(CUdeviceptr *dev_ptr, size_t size) {
+CUresult aimdo_cuda_malloc(CUdeviceptr *dev_ptr, size_t size) {
     int device;
     if (!dev_ptr) {
         return 1; /* cudaErrorInvalidValue */
@@ -105,7 +105,7 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
     log(ERROR, "%s could not find VRAM@%p\n", __func__, ptr);
 }
 
-int aimdo_cuda_free(CUdeviceptr dev_ptr) {
+CUresult aimdo_cuda_free(CUdeviceptr dev_ptr) {
     int device;
     if (!CHECK_CU(cuCtxGetDevice(&device))) {
         return 101; /* cudaErrorInvalidDevice */
