@@ -159,7 +159,7 @@ fail:
 }
 
 /* model_vbar.c */
-void vbars_free(size_t size);
+size_t vbars_free(size_t size);
 void vbars_analyze();
 
 /* pyt-cu-alloc.c */

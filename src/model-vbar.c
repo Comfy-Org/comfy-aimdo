@@ -102,7 +102,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     return do_free;
 }
 
-void vbars_free(size_t size) {
+size_t vbars_free(size_t size) {
     size_t pages_needed = VBAR_GET_PAGE_NR_UP(size);
     bool dirty = false;
 
@@ -110,7 +110,7 @@ void vbars_free(size_t size) {
     vbars_dirty = true;
 
     if (!size) {
-        return;
+        return 0;
     }
 
     for (ModelVBAR *i = lowest_priority.higher; pages_needed && i != &highest_priority;
@@ -125,6 +125,8 @@ void vbars_free(size_t size) {
             }
         }
     }
+
+    return pages_needed;
 }
 
 static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {
