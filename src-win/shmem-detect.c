@@ -68,6 +68,7 @@ size_t wddm_budget_deficit(int device, size_t bytes)
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
     uint64_t effective_budget = vram_capacity;
     ssize_t deficit;
+    size_t free_vram = 0, total_vram = 0;
 
     if (G_WDDM.adapter) {
         if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
@@ -82,6 +83,15 @@ size_t wddm_budget_deficit(int device, size_t bytes)
     if (deficit > 0) {
         log(DEBUG, "Imminent WDDM VRAM OOM detected. Budget: %llu MB, Request: %zu MB, Deficit: %zd MB\n",
             effective_budget / (1024 * 1024), bytes / (1024 * 1024), deficit / (1024 * 1024));
+    }
+
+    if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+        ssize_t deficit_cuda = (ssize_t)(bytes) - free_vram;
+
+        if (deficit_cuda > 0 && deficit_cuda > deficit) {
+            deficit = deficit_cuda;
+            log(DEBUG, "Cuda detected VRAM OOM. Request %zu MB, Deficit: %zd MB\n", bytes / (1024 * 1024), deficit / (1024 * 1024));
+        }
     }
 
     return (deficit > 0) ? (size_t)deficit : 0;
