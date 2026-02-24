@@ -62,6 +62,7 @@ fail:
 
 /* FIXME: This should be 0 if sysmem fallback is disabled by the user */
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
+#define CUDA_BUDGET_HEADROOM (192 * 1024 * 1024)
 
 size_t wddm_budget_deficit(int device, size_t bytes)
 {
@@ -86,7 +87,7 @@ size_t wddm_budget_deficit(int device, size_t bytes)
     }
 
     if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
-        ssize_t deficit_cuda = (ssize_t)(bytes) - free_vram;
+        ssize_t deficit_cuda = (ssize_t)(CUDA_BUDGET_HEADROOM / 2 + bytes) - free_vram;
 
         if (deficit_cuda > 0 && deficit_cuda > deficit) {
             deficit = deficit_cuda;
