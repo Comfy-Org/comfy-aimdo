@@ -3,42 +3,27 @@
 
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
+uint64_t total_vram_last_check;
+ssize_t deficit_sync;
+const char *prevailing_deficit_method;
 
-#define VRAM_HEADROOM (256 * 1024 * 1024)
-
-
-size_t cuda_budget_deficit(size_t bytes) {
+bool cuda_budget_deficit() {
     uint64_t now = GET_TICK();
-
     static uint64_t last_check = 0;
-    static uint64_t total_vram_last_check = 0;
-    static size_t free_vram = 0;
-    static size_t total_vram = 0;
+    size_t free_vram = 0;
+    size_t total_vram = 0;
 
-    if (now - last_check >= 2000) {
-        last_check = now;
-        total_vram_last_check = total_vram_usage;
-        if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
-            return 1;
-        }
+    if (now - last_check < 2000) {
+        return true;
     }
-
-    ssize_t deficit = (ssize_t)(total_vram_usage + bytes + VRAM_HEADROOM) - vram_capacity;
-
-    {
-        ssize_t deficit_cuda = (ssize_t)total_vram_usage - (ssize_t)total_vram_last_check +
-            VRAM_HEADROOM + bytes - free_vram;
-
-        if (deficit_cuda > deficit) {
-            deficit = deficit_cuda;
-        }
+    last_check = now;
+    total_vram_last_check = total_vram_usage;
+    if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+        return false;
     }
-
-    if (deficit > 0) {
-        log(DEBUG, "Imminent VRAM OOM detected. Deficit: %zd MB\n", deficit / (1024 * 1024));
-    }
-
-    return (deficit > 0) ? (size_t)deficit : 0;
+    deficit_sync = (ssize_t)VRAM_HEADROOM - free_vram;
+    prevailing_deficit_method = "cuMemGetInfo";
+    return true;
 }
 
 SHARED_EXPORT

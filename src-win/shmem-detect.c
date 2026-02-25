@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "aimdo.time.h"
 
 #include <windows.h>
 #include <dxgi1_4.h>
@@ -65,33 +66,47 @@ fail:
 /* FIXME: This should be 0 if sysmem fallback is disabled by the user */
 #define WDDM_NL_CHECK_HEADROOM (128 * 1024 * 1024)
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
-#define CUDA_BUDGET_HEADROOM (192 * 1024 * 1024)
+#define CUDA_BUDGET_HEADROOM (128 * 1024 * 1024)
 
-size_t wddm_budget_deficit(int device, size_t bytes)
+bool poll_budget_deficit()
 {
-    DXGI_QUERY_VIDEO_MEMORY_INFO info;
-    DXGI_QUERY_VIDEO_MEMORY_INFO info_nl;
-    uint64_t effective_budget = vram_capacity - VRAM_CAPACITY_HEADROOM;
-    ssize_t deficit = 0;
-    size_t free_vram = 0, total_vram = 0;
-    size_t total = total_vram_usage;
+    uint64_t now = GET_TICK();
+    static uint64_t last_check = 0;
+
+    ssize_t effective_budget = (ssize_t)vram_capacity - VRAM_CAPACITY_HEADROOM;
+    ssize_t total = (ssize_t)total_vram_usage;
+
+    if (now - last_check < 2000) {
+        return true;
+    }
+    last_check = now;
+    total_vram_last_check = total_vram_usage;
+
+    prevailing_deficit_method = "None";
 
     if (G_WDDM.adapter) {
+        DXGI_QUERY_VIDEO_MEMORY_INFO info;
+        DXGI_QUERY_VIDEO_MEMORY_INFO info_nl;
+
         if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+            ssize_t adjusted_budget = (ssize_t)info.Budget - WDDM_BUDGET_HEADROOM;
             /* The most pessimistic number is the truth. */
-            if (info.Budget < effective_budget) {
-                effective_budget = info.Budget;
+            if (adjusted_budget < effective_budget) {
+                effective_budget = adjusted_budget;
             }
             if (info.CurrentUsage > total) {
                 total = info.CurrentUsage;
             }
             if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info_nl))) {
-                deficit = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage +
-                          bytes + WDDM_NL_CHECK_HEADROOM - info.Budget;
-                if (deficit < 0) {
-                    deficit = 0;
+                deficit_sync = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage +
+                          WDDM_NL_CHECK_HEADROOM - (ssize_t)info.Budget;
+                if (deficit_sync < 0) {
+                    deficit_sync = 0;
                 } else {
-                    log(DEBUG, "WDDM memory imbalanced detected. Deficit %zd\n", deficit / (1024 * 1024));
+                    prevailing_deficit_method = "WDDM non-local memory inbalance";
+                }
+            } else {
+                log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
             }
         } else {
             log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
@@ -99,25 +114,28 @@ size_t wddm_budget_deficit(int device, size_t bytes)
     }
 
     {
-        ssize_t deficit_pessimism = (ssize_t)(total_vram_usage + bytes + WDDM_BUDGET_HEADROOM) - (ssize_t)effective_budget;
+        ssize_t deficit_pessimism = total - effective_budget;
 
-        if (deficit_pessimism > 0 && deficit_pessimism > deficit) {
-            deficit = deficit_pessimism;
-            log(DEBUG, "Pessimistic deficit detected. Budget: %llu MB, Request: %zu MB, Deficit: %zd MB\n",
-                effective_budget / (1024 * 1024), bytes / (1024 * 1024), deficit / (1024 * 1024));
+        if (deficit_pessimism > 0 && deficit_pessimism > deficit_sync) {
+            deficit_sync = deficit_pessimism;
+            prevailing_deficit_method = "WDDM pessimistic memory estimation";
+        }
+    } {
+        size_t free_vram = 0, total_vram = 0;
+        ssize_t deficit_cuda;
+
+        if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+            return false;
+        }
+        deficit_cuda = (ssize_t)CUDA_BUDGET_HEADROOM - free_vram;
+
+        if (deficit_cuda > 0 && deficit_cuda > deficit_sync) {
+            deficit_sync = deficit_cuda;
+            prevailing_deficit_method = "cuMemGetInfo (Windows)";
         }
     }
 
-    if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
-        ssize_t deficit_cuda = (ssize_t)(CUDA_BUDGET_HEADROOM / 2 + bytes) - free_vram;
-
-        if (deficit_cuda > 0 && deficit_cuda > deficit) {
-            deficit = deficit_cuda;
-            log(DEBUG, "Cuda detected VRAM OOM. Request %zu MB, Deficit: %zd MB\n", bytes / (1024 * 1024), deficit / (1024 * 1024));
-        }
-    }
-
-    return (deficit > 0) ? (size_t)deficit : 0;
+    return true;
 }
 
 void aimdo_wddm_cleanup()

@@ -276,6 +276,12 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
     log(VVERBOSE, "%s (start): offset=%lldk, size=%lldk\n", __func__, (ull)(offset / K), (ull)(size / K));
     vbars_dirty = true;
 
+    /* Stopgap. If the we get a bad shared memory spike, collect it here on the next layer
+     * as the allocator is unreliable as it may not actually be called reliably when you
+     * really need to know you have spilled.
+     */
+    vbars_free(budget_deficit(0));
+
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
         return VBAR_FAULT_OOM;
@@ -293,7 +299,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
 
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
-        if (wddm_budget_deficit(mv->device, VBAR_PAGE_SIZE) ||
+        if (budget_deficit(VBAR_PAGE_SIZE) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");

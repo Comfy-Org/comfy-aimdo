@@ -26,7 +26,7 @@ int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
         return 1;
     }
 
-    vbars_free(wddm_budget_deficit(device, size));
+    vbars_free(budget_deficit(size));
 
     if (CHECK_CU(cuMemAllocAsync(&dptr, size, (CUstream)hStream))) {
         *devPtr = (void *)dptr;

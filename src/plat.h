@@ -17,7 +17,7 @@ typedef struct CUstream_st *cudaStream_t;
 #include <assert.h>
 
 /* control.c */
-size_t cuda_budget_deficit(int device, size_t bytes);
+bool cuda_budget_deficit();
 
 #if defined(_WIN32) || defined(_WIN64)
 
@@ -34,7 +34,7 @@ void aimdo_wddm_cleanup();
 bool aimdo_setup_hooks();
 void aimdo_teardown_hooks();
 
-size_t wddm_budget_deficit(int device, size_t bytes);
+static inline bool poll_budget_deficit();
 
 #else
 
@@ -51,8 +51,8 @@ static inline void aimdo_wddm_cleanup() {}
 static inline bool aimdo_setup_hooks() { return true; }
 static inline void aimdo_teardown_hooks() {}
 
-static inline size_t wddm_budget_deficit(int device, size_t bytes) {
-    return cuda_budget_deficit(device, bytes);
+static inline bool poll_budget_deficit() {
+    return cuda_budget_deficit();
 }
 
 #endif
@@ -65,6 +65,9 @@ static inline void plat_cleanup() {
     aimdo_wddm_cleanup();
     aimdo_teardown_hooks();
 }
+
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 typedef unsigned long long ull;
 #define K 1024
@@ -102,9 +105,31 @@ void log_reset_shots();
 #define log(level, ...) do_log(false, level, __VA_ARGS__)
 #define log_shot(level, ...) do_log(true, level, __VA_ARGS__)
 
+/* The default VRAM headroom. Different deficit methods with BYO headroom */
+#define VRAM_HEADROOM (256 * 1024 * 1024)
+
 /* control.c */
 extern uint64_t vram_capacity;
 extern uint64_t total_vram_usage;
+extern uint64_t total_vram_last_check;
+extern ssize_t deficit_sync;
+extern const char *prevailing_deficit_method;
+
+static inline size_t budget_deficit(size_t size) {
+    ssize_t deficit_simple, deficit_delta;
+    size_t deficit;
+
+    poll_budget_deficit();
+    deficit_simple = (ssize_t)(total_vram_usage + VRAM_HEADROOM + size) - (ssize_t)vram_capacity;
+    deficit_delta = deficit_sync + (ssize_t)total_vram_usage - total_vram_last_check + size;
+    deficit = (size_t)MAX(MAX(deficit_simple, deficit_delta), (ssize_t)0);
+    if (deficit) {
+        log(DEBUG, "%s: Prevailing Method: %s Deficit: %zu Alloc Size %zu\n", __func__,
+            deficit_simple > deficit_delta ? "simple" : prevailing_deficit_method,
+            deficit / M, size / M);
+    }
+    return deficit;
+}
 
 static inline int check_cu_impl(CUresult res, const char *label) {
     if (res != CUDA_SUCCESS && res != CUDA_ERROR_OUT_OF_MEMORY) {
