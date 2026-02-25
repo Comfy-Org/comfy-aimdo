@@ -63,14 +63,16 @@ fail:
  */
 
 /* FIXME: This should be 0 if sysmem fallback is disabled by the user */
+#define WDDM_NL_CHECK_HEADROOM (128 * 1024 * 1024)
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
 #define CUDA_BUDGET_HEADROOM (192 * 1024 * 1024)
 
 size_t wddm_budget_deficit(int device, size_t bytes)
 {
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
+    DXGI_QUERY_VIDEO_MEMORY_INFO info_nl;
     uint64_t effective_budget = vram_capacity - VRAM_CAPACITY_HEADROOM;
-    ssize_t deficit;
+    ssize_t deficit = 0;
     size_t free_vram = 0, total_vram = 0;
     size_t total = total_vram_usage;
 
@@ -83,16 +85,27 @@ size_t wddm_budget_deficit(int device, size_t bytes)
             if (info.CurrentUsage > total) {
                 total = info.CurrentUsage;
             }
+            if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info_nl))) {
+                deficit = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage +
+                          bytes + WDDM_NL_CHECK_HEADROOM - info.Budget;
+                if (deficit < 0) {
+                    deficit = 0;
+                } else {
+                    log(DEBUG, "WDDM memory imbalanced detected. Deficit %zd\n", deficit / (1024 * 1024));
+            }
         } else {
             log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
         }
     }
 
-    deficit = (ssize_t)(total_vram_usage + bytes + WDDM_BUDGET_HEADROOM) - (ssize_t)effective_budget;
+    {
+        ssize_t deficit_pessimism = (ssize_t)(total_vram_usage + bytes + WDDM_BUDGET_HEADROOM) - (ssize_t)effective_budget;
 
-    if (deficit > 0) {
-        log(DEBUG, "Imminent WDDM VRAM OOM detected. Budget: %llu MB, Request: %zu MB, Deficit: %zd MB\n",
-            effective_budget / (1024 * 1024), bytes / (1024 * 1024), deficit / (1024 * 1024));
+        if (deficit_pessimism > 0 && deficit_pessimism > deficit) {
+            deficit = deficit_pessimism;
+            log(DEBUG, "Pessimistic deficit detected. Budget: %llu MB, Request: %zu MB, Deficit: %zd MB\n",
+                effective_budget / (1024 * 1024), bytes / (1024 * 1024), deficit / (1024 * 1024));
+        }
     }
 
     if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
