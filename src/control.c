@@ -50,6 +50,7 @@ uint64_t get_total_vram_usage() {
 SHARED_EXPORT
 void notify_pin(int64_t size) {
     total_pin_usage += size;
+    log(VERBOSE, "%s: +%zuk -> %zu\n", size / K, total_pin_usage / M);
 }
 
 SHARED_EXPORT

@@ -55,17 +55,22 @@ fail:
     return false;
 }
 
-#define VRAM_CAPACITY_HEADROOM (256 * 1024 * 1024)
-
 /* Apparently this is still too small for all common graphics VRAM spikes.
  * However we can't pad too much on the smaller cards, and its not the end
  * of the world if we page out a little bit because it will adapt and correct
  * quickly.
  */
-
-/* FIXME: This should be 0 if sysmem fallback is disabled by the user */
-#define WDDM_NL_CHECK_HEADROOM (128 * 1024 * 1024)
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
+
+/* Pytorch will also use a non of NON_LOCAL VRAM for the sake its transfer
+ * buffer that are off the books to Aimdo. That forms a natural head room
+ * so keep this as a small addition to that.
+ */
+#define WDDM_NL_CHECK_HEADROOM (128 * 1024 * 1024)
+
+/* Cuda 12 is very defensive in under-reporting the available VRAM under WDDM
+ * so keep this lower than on Linux.
+ */
 #define CUDA_BUDGET_HEADROOM (128 * 1024 * 1024)
 
 bool poll_budget_deficit()
@@ -73,7 +78,7 @@ bool poll_budget_deficit()
     uint64_t now = GET_TICK();
     static uint64_t last_check = 0;
 
-    ssize_t effective_budget = (ssize_t)vram_capacity - VRAM_CAPACITY_HEADROOM;
+    ssize_t effective_budget = (ssize_t)vram_capacity - VRAM_HEADROOM;
     ssize_t total = (ssize_t)total_vram_usage;
 
     if (now - last_check < 2000) {
