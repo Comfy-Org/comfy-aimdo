@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <detours.h>
 
-#define TARGET_DLL "cudart64_12.dll"
+#define TARGET_DLL "cudart64_"
 
 static int (*true_cuda_malloc)(void**, size_t) = NULL;
 static int (*true_cuda_free)(void*) = NULL;
@@ -23,16 +23,22 @@ static const HookEntry hooks[] = {
 };
 
 bool aimdo_setup_hooks() {
-    HMODULE h_real_cuda;
+    HMODULE h_real_cuda = NULL;
     int status;
 
-    h_real_cuda = GetModuleHandleA(TARGET_DLL);
+    h_real_cuda = GetModuleHandleA(TARGET_DLL "13" ".dll");
     if (h_real_cuda == NULL) {
-        h_real_cuda = LoadLibraryExA(TARGET_DLL, NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        h_real_cuda = GetModuleHandleA(TARGET_DLL "12" ".dll");
+    }
+    if (h_real_cuda == NULL) {
+        h_real_cuda = LoadLibraryA(TARGET_DLL "13" ".dll");
+    }
+    if (h_real_cuda == NULL) {
+        h_real_cuda = LoadLibraryA(TARGET_DLL "12" ".dll");
     }
 
     if (h_real_cuda == NULL) {
-        log(ERROR, "%s: %s not found", __func__, TARGET_DLL);
+        log(ERROR, "%s: %s12/13 not found\n", __func__, TARGET_DLL);
         return false;
     }
 
@@ -55,7 +61,7 @@ bool aimdo_setup_hooks() {
         return false;
     }
 
-    log(DEBUG, "%s: hooks successfully installed", __func__);
+    log(DEBUG, "%s: hooks successfully installed\n", __func__);
     return true;
 }
 
@@ -76,6 +82,6 @@ void aimdo_teardown_hooks() {
     if (status != 0) {
         log(ERROR, "%s: DetourDetach failed: %d", __func__, status);
     } else {
-        log(DEBUG, "%s: hooks successfully removed", __func__);
+        log(DEBUG, "%s: hooks successfully removed\n", __func__);
     }
 }
