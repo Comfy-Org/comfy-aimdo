@@ -2,45 +2,48 @@
 #include <windows.h>
 #include <detours.h>
 
-#define TARGET_DLL "cudart64_12.dll"
-
-static int (*true_cuda_malloc)(void**, size_t) = NULL;
-static int (*true_cuda_free)(void*) = NULL;
-static int (*true_cuda_malloc_async)(void **devPtr, size_t size, void *hStream);
-static int (*true_cuda_free_async)(void *devPtr, void *hStream);
-
 typedef struct {
     void **true_ptr;
     void *hook_ptr;
     const char *name;
 } HookEntry;
 
+/* Driver API Versioned Function Pointers */
+static int (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t);
+static int (*true_cuMemFree_v2)(CUdeviceptr);
+static int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream);
+static int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream);
+
+static int aimdo_cuMemAlloc_v2(CUdeviceptr* dptr, size_t size) {
+    return aimdo_cuda_malloc(dptr, size);
+}
+
+static int aimdo_cuMemFree_v2(CUdeviceptr dptr) {
+    return aimdo_cuda_free(dptr);
+}
+
+static int aimdo_cuMemAllocAsync(CUdeviceptr* dptr, size_t size, CUstream hStream) {
+    return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync);
+}
+
+static int aimdo_cuMemFreeAsync(CUdeviceptr dptr, CUstream hStream) {
+    return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync);
+}
+
 static const HookEntry hooks[] = {
-    { (void**)&true_cuda_malloc,       aimdo_cuda_malloc,       "cudaMalloc"       },
-    { (void**)&true_cuda_free,         aimdo_cuda_free,         "cudaFree"         },
-    { (void**)&true_cuda_malloc_async, aimdo_cuda_malloc_async, "cudaMallocAsync"  },
-    { (void**)&true_cuda_free_async,   aimdo_cuda_free_async,   "cudaFreeAsync"    },
+    { (void**)&true_cuMemAlloc_v2,    aimdo_cuMemAlloc_v2,    "cuMemAlloc_v2"    },
+    { (void**)&true_cuMemFree_v2,     aimdo_cuMemFree_v2,     "cuMemFree_v2"     },
+    { (void**)&true_cuMemAllocAsync,  aimdo_cuMemAllocAsync,  "cuMemAllocAsync"  },
+    { (void**)&true_cuMemFreeAsync,   aimdo_cuMemFreeAsync,   "cuMemFreeAsync"   },
 };
 
-bool aimdo_setup_hooks() {
-    HMODULE h_real_cuda;
-    int status;
-
-    h_real_cuda = GetModuleHandleA(TARGET_DLL);
-    if (h_real_cuda == NULL) {
-        h_real_cuda = LoadLibraryExA(TARGET_DLL, NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    }
-
-    if (h_real_cuda == NULL) {
-        log(ERROR, "%s: %s not found", __func__, TARGET_DLL);
-        return false;
-    }
-
+static inline bool install_hook_entrys(HMODULE h, HookEntry *hooks, size_t num_hooks) {
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
+    int status;
 
-    for (int i = 0; i < sizeof(hooks)/sizeof(hooks[0]); i++) {
-        *hooks[i].true_ptr = (void*)GetProcAddress(h_real_cuda, hooks[i].name);
+    for (int i = 0; i < num_hooks; i++) {
+        *hooks[i].true_ptr = (void*)GetProcAddress(h, hooks[i].name);
         if (!*hooks[i].true_ptr ||
             DetourAttach(hooks[i].true_ptr, hooks[i].hook_ptr) != 0) {
             log(ERROR, "%s: Hook %s failed %p", __func__, hooks[i].name, *hooks[i].true_ptr);
@@ -55,8 +58,25 @@ bool aimdo_setup_hooks() {
         return false;
     }
 
-    log(DEBUG, "%s: hooks successfully installed", __func__);
+    log(DEBUG, "%s: hooks successfully installed\n", __func__);
     return true;
+}
+
+bool aimdo_setup_hooks() {
+    HMODULE h_real_cuda = GetModuleHandleA("nvcuda64.dll");
+    if (h_real_cuda == NULL) {
+        h_real_cuda = GetModuleHandleA("nvcuda.dll");
+    }
+
+    if (h_real_cuda == NULL) {
+        log(ERROR, "%s: nvcuda driver not found in process memory", __func__);
+        return false;
+    }
+
+    log(INFO, "%s: found driver at %p, installing %zu hooks",
+        __func__, h_real_cuda, sizeof(hooks) / sizeof(HookEntry));
+
+    return install_hook_entrys(h_real_cuda, (HookEntry*)hooks, sizeof(hooks) / sizeof(HookEntry));
 }
 
 void aimdo_teardown_hooks() {
@@ -76,6 +96,6 @@ void aimdo_teardown_hooks() {
     if (status != 0) {
         log(ERROR, "%s: DetourDetach failed: %d", __func__, status);
     } else {
-        log(DEBUG, "%s: hooks successfully removed", __func__);
+        log(DEBUG, "%s: hooks successfully removed\n", __func__);
     }
 }

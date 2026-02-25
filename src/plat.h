@@ -6,6 +6,7 @@
  * Add duck-types here.
  */
 
+typedef int cudaError_t;
 typedef struct CUstream_st *cudaStream_t;
 
 #include <string.h>
@@ -43,8 +44,6 @@ size_t wddm_budget_deficit(int device, size_t bytes);
 /* On Linux we are the apparent implementation of cudart */
 #define aimdo_cuda_malloc cudaMalloc
 #define aimdo_cuda_free cudaFree
-#define aimdo_cuda_malloc_async cudaMallocAsync
-#define aimdo_cuda_free_async cudaFreeAsync
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
@@ -163,10 +162,13 @@ size_t vbars_free(size_t size);
 void vbars_analyze();
 
 /* pyt-cu-alloc.c */
-int aimdo_cuda_malloc(void **dev_ptr, size_t size);
-int aimdo_cuda_free(void *dev_ptr);
-int aimdo_cuda_malloc_async(void** devPtr, size_t size, void* hStream);
-int aimdo_cuda_free_async(void* devPtr, void* hStream);
+int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size);
+int aimdo_cuda_free(CUdeviceptr dptr);
+
+int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
+                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
+int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
+                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
 
 void allocations_analyze();
 

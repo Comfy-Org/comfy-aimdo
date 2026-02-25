@@ -18,18 +18,19 @@ static inline uint64_t get_tick_linux() {
 #define SIZE_HASH_SIZE 1024
 
 typedef struct SizeEntry {
-    void *ptr;
+    CUdeviceptr ptr;
     size_t size;
     struct SizeEntry *next;
 } SizeEntry;
 
 static SizeEntry *size_table[SIZE_HASH_SIZE];
 
-static inline unsigned int size_hash(void *ptr) {
+static inline unsigned int size_hash(CUdeviceptr ptr) {
     return ((uintptr_t)ptr >> 10 ^ (uintptr_t)ptr >> 21) % SIZE_HASH_SIZE;
 }
 
-int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
+int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
+                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
     static uint64_t last_check = 0;
     uint64_t now = GET_TICK();
     CUdeviceptr dptr;
@@ -50,18 +51,18 @@ int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
         vbars_free(wddm_budget_deficit(device, size));
     }
 
-    if (CHECK_CU(cuMemAllocAsync(&dptr, size, (CUstream)hStream))) {
-        *devPtr = (void *)dptr;
+    if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
+        *devPtr = dptr;
         goto success;
     }
     vbars_free(size);
-    status = cuMemAllocAsync(&dptr, size, (CUstream)hStream);
+    status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
-        *devPtr = (void *)dptr;
+        *devPtr = dptr;
         goto success;
     }
 
-    *devPtr = NULL;
+    *devPtr = 0;
     return status; /* Fail */
 
 success:
@@ -83,7 +84,8 @@ success:
     return 0;
 }
 
-int aimdo_cuda_free_async(void *devPtr, void *hStream) {
+int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
+                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
     SizeEntry *entry;
     SizeEntry **prev;
     unsigned int h;
@@ -103,8 +105,8 @@ int aimdo_cuda_free_async(void *devPtr, void *hStream) {
         if (entry->ptr == devPtr) {
             *prev = entry->next;
 
-            log(VVERBOSE, "Freed: ptr=%p, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
-            status = cuMemFreeAsync((CUdeviceptr)devPtr, (CUstream)hStream);
+            log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
+            status = true_cuMemFreeAsync(devPtr, hStream);
             if (CHECK_CU(status)) {
                 total_vram_usage -= ALIGN_UP(entry->size);
             }
@@ -119,3 +121,22 @@ int aimdo_cuda_free_async(void *devPtr, void *hStream) {
     log(ERROR, "%s: could not account free at %p\n", __func__, devPtr);
     return cuMemFreeAsync((CUdeviceptr)devPtr, (CUstream)hStream);
 }
+
+#if !defined(_WIN32) && !defined(_WIN64)
+
+cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
+    if (!devPtr) {
+        return 1; /* cudaErrorInvalidValue */
+    }
+
+    return aimdo_cuda_malloc_async((CUdeviceptr*)devPtr, size,
+                                   (CUstream)stream, cuMemAllocAsync) ?
+                2 /* cudaErrorMemoryAllocation */ : 0;
+}
+
+cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
+    return aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync) ?
+                400 /* cudaErrorInvalidDevicePointer */ : 0;
+}
+
+#endif

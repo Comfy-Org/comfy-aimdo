@@ -46,7 +46,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     log(VERBOSE, "%s (start): size=%zuk, device=%d\n", __func__, size / K, device);
 
     if (virt_size < MIN_ALLOC) {
-        log(WARNING, "Unexpected small allocation from pytorch. Rounding up virt allocation to 2MB");
+        log(DEBUG, "Unexpected small allocation from pytorch. Rounding up virt allocation to 2MB");
         virt_size = MIN_ALLOC;
     }
 
@@ -69,7 +69,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     return (void *)vrambuf_get(entry);
 }
 
-int aimdo_cuda_malloc(void **dev_ptr, size_t size) {
+int aimdo_cuda_malloc(CUdeviceptr *dev_ptr, size_t size) {
     int device;
     if (!dev_ptr) {
         return 1; /* cudaErrorInvalidValue */
@@ -78,7 +78,7 @@ int aimdo_cuda_malloc(void **dev_ptr, size_t size) {
         return 101; /* cudaErrorInvalidDevice */
     }
 
-    *dev_ptr = alloc_fn(size, device, NULL);
+    *dev_ptr = (CUdeviceptr)alloc_fn(size, device, NULL);
     return *dev_ptr ? 0 /* cudaSuccess */ : 2 /* cudaErrorMemoryAllocation */;
 }
 
@@ -105,11 +105,11 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
     log(ERROR, "%s could not find VRAM@%p\n", __func__, ptr);
 }
 
-int aimdo_cuda_free(void *dev_ptr) {
+int aimdo_cuda_free(CUdeviceptr dev_ptr) {
     int device;
     if (!CHECK_CU(cuCtxGetDevice(&device))) {
         return 101; /* cudaErrorInvalidDevice */
     }
-    free_fn(dev_ptr, 0, device, NULL);
+    free_fn((void *)dev_ptr, 0, device, NULL);
     return 0;
 }
