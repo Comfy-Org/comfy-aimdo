@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "aimdo-time.h"
 
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
@@ -25,7 +26,7 @@ size_t cuda_budget_deficit(size_t bytes) {
     ssize_t deficit = (ssize_t)(total_vram_usage + bytes + VRAM_HEADROOM) - vram_capacity;
 
     {
-        ssize_t deficit_cuda = (ssize_t)total_vram - (ssize_t)total_vram_last_check +
+        ssize_t deficit_cuda = (ssize_t)total_vram_usage - (ssize_t)total_vram_last_check +
             VRAM_HEADROOM + bytes - free_vram;
 
         if (deficit_cuda > deficit) {
