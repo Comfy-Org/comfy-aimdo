@@ -54,6 +54,8 @@ fail:
     return false;
 }
 
+#define VRAM_CAPACITY_HEADROOM (256 * 1024 * 1024)
+
 /* Apparently this is still too small for all common graphics VRAM spikes.
  * However we can't pad too much on the smaller cards, and its not the end
  * of the world if we page out a little bit because it will adapt and correct
@@ -67,13 +69,20 @@ fail:
 size_t wddm_budget_deficit(int device, size_t bytes)
 {
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
-    uint64_t effective_budget = vram_capacity;
+    uint64_t effective_budget = vram_capacity - VRAM_CAPACITY_HEADROOM;
     ssize_t deficit;
     size_t free_vram = 0, total_vram = 0;
+    size_t total = total_vram_usage;
 
     if (G_WDDM.adapter) {
         if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
-            effective_budget = info.Budget;
+            /* The most pessimistic number is the truth. */
+            if (info.Budget < effective_budget) {
+                effective_budget = info.Budget;
+            }
+            if (info.CurrentUsage > total) {
+                total = info.CurrentUsage;
+            }
         } else {
             log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
         }
