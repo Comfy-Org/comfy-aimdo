@@ -81,6 +81,7 @@ bool poll_budget_deficit()
     }
     last_check = now;
     total_vram_last_check = total_vram_usage;
+    deficit_sync = -(ssize_t)(512LL * G);
 
     prevailing_deficit_method = "None";
 
@@ -100,11 +101,7 @@ bool poll_budget_deficit()
             if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info_nl))) {
                 deficit_sync = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage +
                           WDDM_NL_CHECK_HEADROOM - (ssize_t)info.Budget;
-                if (deficit_sync < 0) {
-                    deficit_sync = 0;
-                } else {
-                    prevailing_deficit_method = "WDDM non-local memory inbalance";
-                }
+                prevailing_deficit_method = "WDDM non-local memory inbalance";
             } else {
                 log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
             }
@@ -116,7 +113,7 @@ bool poll_budget_deficit()
     {
         ssize_t deficit_pessimism = total - effective_budget;
 
-        if (deficit_pessimism > 0 && deficit_pessimism > deficit_sync) {
+        if (deficit_pessimism > deficit_sync) {
             deficit_sync = deficit_pessimism;
             prevailing_deficit_method = "WDDM pessimistic memory estimation";
         }
@@ -129,7 +126,7 @@ bool poll_budget_deficit()
         }
         deficit_cuda = (ssize_t)CUDA_BUDGET_HEADROOM - free_vram;
 
-        if (deficit_cuda > 0 && deficit_cuda > deficit_sync) {
+        if (deficit_cuda > deficit_sync) {
             deficit_sync = deficit_cuda;
             prevailing_deficit_method = "cuMemGetInfo (Windows)";
         }

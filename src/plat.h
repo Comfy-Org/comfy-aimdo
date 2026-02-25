@@ -71,6 +71,7 @@ static inline void plat_cleanup() {
 typedef unsigned long long ull;
 #define K 1024
 #define M (K * K)
+#define G (M * K)
 
 enum DebugLevels {
     __NONE__ = -1,
