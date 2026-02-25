@@ -1,5 +1,5 @@
 #include "plat.h"
-#include "aimdo.time.h"
+#include "aimdo-time.h"
 
 #include <windows.h>
 #include <dxgi1_4.h>

@@ -30,11 +30,10 @@ typedef SSIZE_T ssize_t;
 /* shmem-detect.c */
 bool aimdo_wddm_init(CUdevice dev);
 void aimdo_wddm_cleanup();
+bool poll_budget_deficit();
 /* cuda-detour.c */
 bool aimdo_setup_hooks();
 void aimdo_teardown_hooks();
-
-static inline bool poll_budget_deficit();
 
 #else
 
