@@ -7,6 +7,8 @@ uint64_t total_vram_last_check;
 ssize_t deficit_sync;
 const char *prevailing_deficit_method;
 
+int64_t total_pin_usage;
+
 bool cuda_budget_deficit() {
     uint64_t now = GET_TICK();
     static uint64_t last_check = 0;
@@ -46,10 +48,16 @@ uint64_t get_total_vram_usage() {
 }
 
 SHARED_EXPORT
+void notify_pin(int64_t size) {
+    total_pin_usage += size;
+}
+
+SHARED_EXPORT
 bool init(int cuda_device_id) {
     CUdevice dev;
     char dev_name[256];
 
+    total_pin_usage = 0;
     log_reset_shots();
 
     if (!CHECK_CU(cuDeviceGet(&dev, cuda_device_id)) ||

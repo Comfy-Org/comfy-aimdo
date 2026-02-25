@@ -131,6 +131,8 @@ static inline size_t budget_deficit(size_t size) {
     return deficit;
 }
 
+extern int64_t total_pin_usage;
+
 static inline int check_cu_impl(CUresult res, const char *label) {
     if (res != CUDA_SUCCESS && res != CUDA_ERROR_OUT_OF_MEMORY) {
         const char* desc;

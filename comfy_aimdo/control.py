@@ -31,6 +31,8 @@ def init():
     lib.get_total_vram_usage.argtypes = []
     lib.get_total_vram_usage.restype = ctypes.c_uint64
 
+    lib.notify_pin.argtypes = [ ctypes.c_int64 ]
+
     lib.init.argtypes = [ctypes.c_int]
     lib.init.restype = ctypes.c_bool
 
@@ -65,3 +67,8 @@ def analyze():
 
 def get_total_vram_usage():
     return 0 if lib is None else lib.get_total_vram_usage()
+
+def notify_pin(size):
+    if lib is None:
+        return
+    lib.notify_pin(size)

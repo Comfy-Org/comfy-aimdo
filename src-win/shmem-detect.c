@@ -99,7 +99,7 @@ bool poll_budget_deficit()
                 total = info.CurrentUsage;
             }
             if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info_nl))) {
-                deficit_sync = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage +
+                deficit_sync = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage - total_pin_usage +
                           WDDM_NL_CHECK_HEADROOM - (ssize_t)info.Budget;
                 prevailing_deficit_method = "WDDM non-local memory inbalance";
             } else {
