@@ -30,8 +30,6 @@ static inline unsigned int size_hash(void *ptr) {
 }
 
 int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
-    static uint64_t last_check = 0;
-    uint64_t now = GET_TICK();
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -41,14 +39,7 @@ int aimdo_cuda_malloc_async(void **devPtr, size_t size, void *hStream) {
         return 1;
     }
 
-    if (now - last_check >= 2000) {
-        last_check = now;
-        CUdevice device;
-        if (!CHECK_CU(cuCtxGetDevice(&device))) {
-            return 1;
-        }
-        vbars_free(wddm_budget_deficit(device, size));
-    }
+    vbars_free(wddm_budget_deficit(device, size));
 
     if (CHECK_CU(cuMemAllocAsync(&dptr, size, (CUstream)hStream))) {
         *devPtr = (void *)dptr;

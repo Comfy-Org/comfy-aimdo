@@ -5,13 +5,28 @@ uint64_t total_vram_usage;
 
 #define VRAM_HEADROOM (256 * 1024 * 1024)
 
-size_t cuda_budget_deficit(int device, size_t bytes) {
-    size_t free_vram = 0, total_vram = 0;
+
+size_t cuda_budget_deficit(size_t bytes) {
+    uint64_t now = GET_TICK();
+
+    static uint64_t last_check = 0;
+    static uint64_t total_vram_last_check = 0;
+    static size_t free_vram = 0;
+    static size_t total_vram = 0;
+
+    if (now - last_check >= 2000) {
+        last_check = now;
+        total_vram_last_check = total_vram_usage;
+        if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+            return 1;
+        }
+    }
 
     ssize_t deficit = (ssize_t)(total_vram_usage + bytes + VRAM_HEADROOM) - vram_capacity;
 
-    if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
-        ssize_t deficit_cuda = (ssize_t)(VRAM_HEADROOM + bytes) - free_vram;
+    {
+        ssize_t deficit_cuda = (ssize_t)total_vram - (ssize_t)total_vram_last_check +
+            VRAM_HEADROOM + bytes - free_vram;
 
         if (deficit_cuda > deficit) {
             deficit = deficit_cuda;
