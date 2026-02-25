@@ -116,6 +116,7 @@ bool poll_budget_deficit()
     }
 
     {
+#if 0
         ssize_t deficit_pessimism = total - effective_budget;
 
         if (deficit_pessimism > deficit_sync) {
@@ -123,6 +124,7 @@ bool poll_budget_deficit()
             prevailing_deficit_method = "WDDM pessimistic memory estimation";
         }
     } {
+#endif
         size_t free_vram = 0, total_vram = 0;
         ssize_t deficit_cuda;
 
