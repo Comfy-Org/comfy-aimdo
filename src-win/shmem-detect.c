@@ -62,7 +62,7 @@ fail:
  */
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
 
-/* Pytorch will also use a non of NON_LOCAL VRAM for the sake its transfer
+/* Pytorch will also use non NON_LOCAL VRAM for the sake its transfer
  * buffer that are off the books to Aimdo. That forms a natural head room
  * so keep this as a small addition to that.
  */
@@ -95,7 +95,7 @@ bool poll_budget_deficit()
         DXGI_QUERY_VIDEO_MEMORY_INFO info_nl;
 
         if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
-            ssize_t adjusted_budget = (ssize_t)info.Budget - WDDM_BUDGET_HEADROOM;
+            ssize_t adjusted_budget = (ssize_t)info.Budget;
             /* The most pessimistic number is the truth. */
             if (adjusted_budget < effective_budget) {
                 effective_budget = adjusted_budget;
@@ -103,6 +103,7 @@ bool poll_budget_deficit()
             if (info.CurrentUsage > total) {
                 total = info.CurrentUsage;
             }
+#if 0
             if (SUCCEEDED(G_WDDM.adapter->lpVtbl->QueryVideoMemoryInfo(G_WDDM.adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info_nl))) {
                 deficit_sync = (ssize_t)info.CurrentUsage + (ssize_t)info_nl.CurrentUsage - total_pin_usage +
                           WDDM_NL_CHECK_HEADROOM - (ssize_t)info.Budget;
@@ -110,13 +111,13 @@ bool poll_budget_deficit()
             } else {
                 log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
             }
+#endif
         } else {
             log(WARNING, "comfy-aimdo WDDM VRAM query failed. Using physical capacity as fallback\n");
         }
     }
 
     {
-#if 0
         ssize_t deficit_pessimism = total - effective_budget;
 
         if (deficit_pessimism > deficit_sync) {
@@ -124,7 +125,6 @@ bool poll_budget_deficit()
             prevailing_deficit_method = "WDDM pessimistic memory estimation";
         }
     } {
-#endif
         size_t free_vram = 0, total_vram = 0;
         ssize_t deficit_cuda;
 
