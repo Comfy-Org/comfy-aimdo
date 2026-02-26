@@ -1,0 +1,6 @@
+#!/bin/bash
+
+
+SRCS="src/*.c src-posix/detour-hip.c"
+gcc $(hipconfig -C) -L $(hipconfig -p)/lib -shared -O2 -o comfy_aimdo/aimdo_rocm.so -fPIC -Werror \
+	${SRCS} -l amdhip64
