@@ -105,7 +105,7 @@ CUresult aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
         if (entry->ptr == devPtr) {
             *prev = entry->next;
 
-            log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
+            log(VVERBOSE, "Freed: ptr=%p, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
             status = true_cuMemFreeAsync(devPtr, hStream);
             if (CHECK_CU(status)) {
                 total_vram_usage -= ALIGN_UP(entry->size);
