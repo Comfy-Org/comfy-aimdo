@@ -40,3 +40,10 @@ void aimdo_teardown_hooks();
 
 CUresult cuMemFreeAsync(CUdeviceptr, CUstream);
 CUresult cuMemAllocAsync(CUdeviceptr*, size_t, CUstream);
+
+// On Windows we can define these without problems. On Linux this will cause recursion in
+// the implementations.
+#if defined(_WIN32) || defined(_WIN64)
+#define cuMemFreeAsync hipFreeAsync
+#define cuMemAllocAsync hipMallocAsync
+#endif
