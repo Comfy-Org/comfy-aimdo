@@ -5,7 +5,7 @@ This project is a pytorch VRAM allocator that implements on-demand offloading of
 ## Support:
 
 * **Nvidia GPUs only**
-* **Pytorch 2.6+**
+* **Pytorch 2.8+**
 * **Cuda 12.8+**
 * **Windows 11+** / **Linux** as per python ManyLinux support
 
@@ -48,7 +48,6 @@ see examples/example.py
 
 * VBAR allocation is done with `cuMemAddressReserve()`, faulting with `cuMemCreate()` and `cuMemMap()` and all frees done with appropriate converse APIs.
 * For consistency with VBAR memory management, main pytorch allocator plugin is also implemented with `cuMemAddressReserve` -> `cuMemCreate` -> `cuMemMap`. This also behaves a lot better on Windows systems with System Memory fallback.
-* This allocator is incompatible with the pytorch `cudaMallocAsync` backend or expandable segments backends (as the plugin interface does not exist on these backends as of this writing).
 
 ## Caveats:
 
