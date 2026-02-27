@@ -21,6 +21,7 @@ void *vrambuf_create(int device, size_t max_size) {
         return NULL;
     }
 
+    log(VERBOSE, "%s : %p: @%llx\n", __func__, buf, buf->base_ptr);
     return (void *)buf;
 }
 
@@ -67,6 +68,7 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         }
 
         buf->handles[buf->handle_count++] = handle;
+        log(VVERBOSE, "%s: allocate vrambuf chunk @%llx, size %zuk\n", __func__, buf->base_ptr + buf->allocated, to_allocate / K);
         buf->allocated += to_allocate;
     }
 

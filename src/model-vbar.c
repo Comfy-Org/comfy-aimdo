@@ -259,8 +259,9 @@ void vbar_deprioritize(void *vbar) {
 
 SHARED_EXPORT
 uint64_t vbar_get(void *vbar) {
-    log(DEBUG, "%s vbar=%p\n", __func__, vbar);
-    return (uint64_t)((ModelVBAR *)vbar)->vbar;
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    log(DEBUG, "%s vbar=%p = %llx\n", __func__, vbar, mv->vbar);
+    return (uint64_t)mv->vbar;
 }
 
 #define VBAR_FAULT_SUCCESS           0
@@ -299,8 +300,6 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
             continue;
         }
 
-        log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
-
         if (budget_deficit(VBAR_PAGE_SIZE) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
@@ -318,6 +317,9 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
                 return VBAR_FAULT_ERROR;
             }
         }
+
+        log(VERBOSE, "VBAR allocated VRAM for page %d @%llx\n", (int)page_nr, vaddr);
+
         rp->serial++;
         signature[signature_index++] = rp->serial;
         mv->resident_count++;
