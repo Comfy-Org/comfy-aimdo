@@ -8,6 +8,23 @@ ssize_t deficit_sync;
 const char *prevailing_deficit_method;
 CUcontext aimdo_cuda_ctx;
 
+SHARED_EXPORT
+void *hostbuf_create(size_t size) {
+    void *ptr = NULL;
+    if (!CHECK_CU(cuMemHostAlloc(&ptr, size, 0))) {
+        return NULL;
+    }
+    return ptr;
+}
+
+SHARED_EXPORT
+void hostbuf_destroy(void *ptr) {
+    if (!ptr) {
+        return;
+    }
+    CHECK_CU(cuMemFreeHost(ptr));
+}
+
 bool cuda_budget_deficit() {
     uint64_t now = GET_TICK();
     static uint64_t last_check = 0;
