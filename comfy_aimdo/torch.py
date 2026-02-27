@@ -1,9 +1,14 @@
 import torch
+import numpy as np
 import ctypes
 
 import logging
 
 from . import control
+
+from .model_vbar import ModelVBAR
+from .vram_buffer import VRAMBuffer
+from .host_buffer import HostBuffer
 
 def get_tensor_from_raw_ptr(ptr, size, device):
     container = {
@@ -21,9 +26,18 @@ def get_tensor_from_raw_ptr(ptr, size, device):
 
     return torch.as_tensor(holder, device=device)
 
-def aimdo_to_tensor(alloc, device):
-    _, ptr, size = alloc
-    return get_tensor_from_raw_ptr(ptr, size, device)
+def aimdo_to_tensor(alloc, device="cpu"):
+    if isinstance(alloc, HostBuffer):
+        buffer_type = ctypes.c_ubyte * alloc.size
+        c_array = buffer_type.from_address(alloc.ptr)
+        array = np.frombuffer(c_array, dtype=np.uint8)
+        array.setflags(write=True)
+        t = torch.from_numpy(array)
+        t._comfy_aimdo_storage = alloc
+        return t
+    elif isinstance(alloc[0], ModelVBAR) or isinstance(alloc[0], VRAMBuffer):
+        _, ptr, size = alloc
+        return get_tensor_from_raw_ptr(ptr, size, device)
 
 #pytorch doesnt have an API for a CUDAPluggableAllocator from an already loaded
 #library. Rather than force a second load that pytorch owns, construct these
