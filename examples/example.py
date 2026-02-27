@@ -1,16 +1,22 @@
 import gc
-import torch
 import time
 import ctypes
 import math
 
-import comfy_aimdo.torch
+##VERY IMPORTANT: comfy_aimfo.control.init() must be called before torch is imported or anything that
+#imports torch (including comfy_aimdo.torch(
+
 import comfy_aimdo.control
-from comfy_aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare, vbars_analyze
+comfy_aimdo.control.init()
+comfy_aimdo.control.set_log_info()
+#comfy_aimdo.control.set_log_debug() #use this to see much more information
+#comfy_aimdo.control.set_log_verbose() #use this to see even more information (there is also vverbose)
 
-comfy_aimdo.control.set_log_debug()
+import torch
+import comfy_aimdo.torch
+from comfy_aimdo.model_vbar import ModelVBAR, vbar_fault, vbar_unpin, vbar_signature_compare
 
-allocator = comfy_aimdo.torch.CUDAPluggableAllocator()
+comfy_aimdo.control.init_device(torch.device(torch.cuda.current_device()).index)
 
 signatures = {}
 
@@ -44,37 +50,33 @@ def run_layer(input_tensor, weight, cpu_source, weight_offset): #NOTE: offset ju
     return output
 
 def run_model(weights, cpu_weight, sleep=0):
-    with torch.cuda.use_mem_pool(torch.cuda.MemPool(allocator.allocator())):
-        x = torch.zeros(cpu_weight.shape, device="cuda:0", dtype=torch.float16)
-        for i in range(10): # Iteration loop
-            print(f"\nIteration {i}")
-            weight_offset = 0 #just for print messages
-            if (i > 2):
-                print("...")
-                weight_offset = None
+    x = torch.zeros(cpu_weight.shape, device="cuda:0", dtype=torch.float16)
+    for i in range(6): # Iteration loop
+        print(f"\nIteration {i}")
+        weight_offset = 0 #just for print messages
+        if (i > 2):
+            print("...")
+            weight_offset = None
 
-            for layer_weight in weights:
-                x = run_layer(x, layer_weight, cpu_weight, weight_offset)
-                if weight_offset is not None:
-                    weight_offset += cpu_weight.numel() * cpu_weight.element_size()
-            time.sleep(sleep) #so you can see nvtop
-        #sometimes torch can free mempools while the GPU is still working. Must sync
-        #before we gc this mempool
-        torch.cuda.synchronize()
-    # Torch code comments says some stuff about not actually freeing tensors on mempool
-    #context release. Explicitly garbage collect now.
+        for layer_weight in weights:
+            x = run_layer(x, layer_weight, cpu_weight, weight_offset)
+            if weight_offset is not None:
+                weight_offset += cpu_weight.numel() * cpu_weight.element_size()
+        time.sleep(sleep) #so you can see nvtop
     gc.collect()
     torch.cuda.empty_cache()
 
 #FIXME: Get rid of this
 dummy = torch.randn(1, device=torch.device("cuda:0"))
 
+gpu_size = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
 dtype = torch.float16
 
-vbar1 = ModelVBAR(128 * 1024**3, device=0)
-
-shape = (20480, 10240)
-num_layers = 8 * 1024 **3 // (10240 * 10240 * dtype.itemsize)
+#A big model, with 30 weights filling 1.5X the available VRAM
+num_layers = 30
+scale_factor = gpu_size * 3 // (2 *num_layers * (1024 * 1024) * dtype.itemsize)
+vbar1 = ModelVBAR(gpu_size * 5, device=0) #The vbar can be much bigger than VRAM
+shape = (1024, 1024, scale_factor)
 
 weights1 = [vbar1.alloc(math.prod(shape) * dtype.itemsize) for _ in range(num_layers)]
 #just share one weight in this example, as don't complicate this example
@@ -86,12 +88,12 @@ print("Some weights will be loaded and stay there for all iterations")
 print("Some weights will be offloaded\n")
 
 run_model(weights1, cpu_weight1)
-vbars_analyze() #print some stats
+comfy_aimdo.control.analyze() #print some stats
 
 #A smaller second model but with chunkier weights
-vbar2 = ModelVBAR(3 * 1024 **3, device=0)
-shape = (15443, 20480)
-num_layers = 2
+num_layers=3
+vbar2 = ModelVBAR(gpu_size * 5, device=0) #The vbar can be much bigger than VRAM
+shape = (1024, 1024, 2, scale_factor)
 
 weights2 = [ vbar2.alloc(math.prod(shape) * dtype.itemsize) for _ in range(num_layers)]
 cpu_weight2 = torch.ones(shape, dtype=dtype)
@@ -100,7 +102,7 @@ print("##################### Run the second model #######################")
 print("Everything will be loaded and will displace some weights of the first model\n")
 
 run_model(weights2, cpu_weight2, sleep=0.5)
-vbars_analyze() #print some stats
+comfy_aimdo.control.analyze() #print some stats
 
 print("##################### Run the first model again #######################")
 print("Some weights will still be loaded from before and be there first iteration")
@@ -109,4 +111,4 @@ print("The rest will be offloaded again\n")
 
 vbar1.prioritize()
 run_model(weights1, cpu_weight1)
-vbars_analyze() #print some stats
+comfy_aimdo.control.analyze() #print some stats
