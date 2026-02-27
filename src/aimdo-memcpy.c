@@ -5,7 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define SYNC_IT
+#define SYNC_IT 2
 
 typedef struct TransferSegment {
     void *src;
@@ -89,12 +89,14 @@ static THREAD_FUNC worker_proc(void *arg) {
         } else if (t->type == TRANSFER_TYPE_HTOD) {
             log(VVERBOSE, "%s: htod %p %llx %zu\n", __func__, t->src, (CUdeviceptr)t->dest, t->size);
             CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)t->dest, t->src, t->size, slot->stream));
-#ifdef SYNC_IT
+#if SYNC_IT > 0
             CHECK_CU(cuStreamSynchronize(slot->stream));
 #endif
         } else if (t->type == TRANSFER_TYPE_EVENT) {
+#if SYNC_IT <= 1
             log(VVERBOSE, "%s: SEV@%llx -> %zu\n", __func__, slot->dev_signal, t->size);
             CHECK_CU(cuStreamWriteValue32(slot->stream, slot->dev_signal, t->size, CU_STREAM_WRITE_VALUE_DEFAULT));
+#endif
         }
 
         free(t);
@@ -136,7 +138,7 @@ bool vbar_slot_transfer(void *s, void *src, void *dest, size_t size, int type) {
     *i = seg;
     mutex_unlock(slot->mutex);
 
-#ifdef SYNC_IT
+#if SYNC_IT > 0
     thread_join(slot->thread);
 #endif
     return true;
@@ -149,7 +151,9 @@ void vbar_slot_wait(void *s, void *stream_ptr) {
     slot->counter++;
     vbar_slot_transfer(s, NULL, NULL, slot->counter, TRANSFER_TYPE_EVENT);
     log(VVERBOSE, "%s: WFE@%llx -> %zu\n", __func__, slot->dev_signal, (size_t)slot->counter);
+#if SYNC_IT <= 1
     CHECK_CU(cuStreamWaitValue32((CUstream)stream_ptr, slot->dev_signal, slot->counter, CU_STREAM_WAIT_VALUE_GEQ));
+#endif
 }
 
 SHARED_EXPORT
