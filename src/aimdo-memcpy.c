@@ -5,7 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define SYNC_IT 2
+#define SYNC_IT 1
 
 typedef struct TransferSegment {
     void *src;
