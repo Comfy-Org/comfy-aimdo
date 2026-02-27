@@ -150,8 +150,8 @@ void vbar_slot_wait(void *s, void *stream_ptr) {
 
     slot->counter++;
     vbar_slot_transfer(s, NULL, NULL, slot->counter, TRANSFER_TYPE_EVENT);
-    log(VVERBOSE, "%s: WFE@%llx -> %zu\n", __func__, slot->dev_signal, (size_t)slot->counter);
 #if SYNC_IT <= 1
+    log(VVERBOSE, "%s: WFE@%llx -> %zu\n", __func__, slot->dev_signal, (size_t)slot->counter);
     CHECK_CU(cuStreamWaitValue32((CUstream)stream_ptr, slot->dev_signal, slot->counter, CU_STREAM_WAIT_VALUE_GEQ));
 #endif
 }

@@ -291,8 +291,6 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
             continue;
         }
 
-        log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
-
         if (wddm_budget_deficit(mv->device, VBAR_PAGE_SIZE) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
@@ -310,6 +308,9 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
                 return VBAR_FAULT_ERROR;
             }
         }
+
+        log(VERBOSE, "VBAR allocated VRAM for page %d @%llx\n", (int)page_nr, vaddr);
+
         rp->serial++;
         signature[signature_index++] = rp->serial;
         mv->resident_count++;
