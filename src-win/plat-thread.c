@@ -13,7 +13,9 @@ void mutex_unlock(Mutex m) {
 }
 
 void mutex_destroy(Mutex m) {
-    CloseHandle(m);
+    if (m) {
+        CloseHandle(m);
+    }
 }
 
 bool thread_create(Thread *t, ThreadProc proc, void *arg) {
