@@ -73,7 +73,7 @@ bool aimdo_setup_hooks() {
         return false;
     }
 
-    log(INFO, "%s: found driver at %p, installing %zu hooks",
+    log(INFO, "%s: found driver at %p, installing %zu hooks\n",
         __func__, h_real_cuda, sizeof(hooks) / sizeof(HookEntry));
 
     return install_hook_entrys(h_real_cuda, (HookEntry*)hooks, sizeof(hooks) / sizeof(HookEntry));
