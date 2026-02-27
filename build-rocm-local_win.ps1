@@ -1,3 +1,4 @@
+# comfy-aimdo Windows ROCm local build script
 # Requires: Visual Studio, Git, and ROCm SDK
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -18,19 +19,22 @@ Write-Host "ROCm: $rocmBase"
 
 # ── Detours ────────────────────────────────────────────────────────────────────
 $detoursDir = "$root\detours"
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found. Please install Git and ensure it is on PATH." }
 if (Test-Path $detoursDir) { Remove-Item -Recurse -Force $detoursDir }
 git clone -q --depth 1 https://github.com/microsoft/Detours.git $detoursDir
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found. Is Visual Studio installed?" }
 $vcvars  = "$(& $vswhere -latest -property installationPath)\VC\Auxiliary\Build\vcvars64.bat"
-$bat = [IO.Path]::GetTempFileName() + ".bat"
-"@echo off`ncall `"$vcvars`"`ncd /d `"$detoursDir\src`"`nnmake" | Set-Content $bat -Encoding ASCII
+$bat = [IO.Path]::Combine([IO.Path]::GetTempPath(), [IO.Path]::GetRandomFileName() + ".bat")
+"@echo off`ncall `"$vcvars`" || exit /b 1`ncd /d `"$detoursDir\src`"`nnmake" | Set-Content $bat -Encoding ASCII
 cmd /c $bat
 Remove-Item $bat
-if ($LASTEXITCODE -ne 0) { throw "Detours build failed" }
+if ($LASTEXITCODE -ne 0) { throw "Detours build failed (vcvars or nmake error)" }
 
 # ── Compile ────────────────────────────────────────────────────────────────────
-$sources = @(Get-Item "$root\src\*.c") + @(Get-Item "$root\src-win\*.c") | ForEach-Object { "`"$(F $_.FullName)`"" }
+$sources = @(Get-Item "$root\src\*.c" -ErrorAction SilentlyContinue) + @(Get-Item "$root\src-win\*.c" -ErrorAction SilentlyContinue) | ForEach-Object { "`"$(F $_.FullName)`"" }
+if (-not $sources) { throw "No .c source files found in src\ or src-win\." }
 
 $rspFile = "$root\build.rsp"
 [IO.File]::WriteAllLines($rspFile, @(
