@@ -18,6 +18,7 @@ void *vrambuf_create(int device, size_t max_size) {
         return NULL;
     }
 
+    log(VERBOSE, "%s : %p: @%llx\n", __func__, buf, buf->base_ptr);
     return (void *)buf;
 }
 
