@@ -259,7 +259,7 @@ SHARED_EXPORT
 uint64_t vbar_get(void *vbar) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     log(DEBUG, "%s vbar=%p = %llx\n", __func__, vbar, mv->vbar);
-    return (uint64_t)vbar->vbar;
+    return (uint64_t)mv->vbar;
 }
 
 #define VBAR_FAULT_SUCCESS           0
