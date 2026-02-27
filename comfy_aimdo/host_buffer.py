@@ -21,7 +21,7 @@ class HostBuffer:
 
     @property
     def ptr(self):
-        return self._ptr.value
+        return self._ptr
 
     @property
     def size(self):
