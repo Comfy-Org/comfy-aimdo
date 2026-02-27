@@ -92,7 +92,8 @@ class ModelVBAR:
 
     def __del__(self):
         if hasattr(self, '_ptr') and self._ptr:
-            lib.vbar_free(self._ptr)
+            if lib is not None:
+                lib.vbar_free(self._ptr)
             self._ptr = None
 
 def vbar_fault(alloc):
