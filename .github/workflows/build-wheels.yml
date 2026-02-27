@@ -91,7 +91,7 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: custom-cuda-builder 
           CIBW_BUILD: "cp39-manylinux_x86_64 cp39-win_amd64"
           CIBW_BEFORE_BUILD_LINUX: >
-            gcc -shared -fPIC -O2 -g src/*.c
+            gcc -shared -pthread -fPIC -O2 -g src/*.c src-posix/*.c
             -Isrc -I/usr/local/cuda-12.1/include
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
             -lcuda -o comfy_aimdo/aimdo.so
