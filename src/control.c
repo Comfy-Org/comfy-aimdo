@@ -3,6 +3,23 @@
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
 
+SHARED_EXPORT
+void *hostbuf_create(size_t size) {
+    void *ptr = NULL;
+    if (!CHECK_CU(cuMemHostAlloc(&ptr, size, 0))) {
+        return NULL;
+    }
+    return ptr;
+}
+
+SHARED_EXPORT
+void hostbuf_destroy(void *ptr) {
+    if (!ptr) {
+        return;
+    }
+    CHECK_CU(cuMemFreeHost(ptr));
+}
+
 #define VRAM_HEADROOM (256 * 1024 * 1024)
 
 size_t cuda_budget_deficit(int device, size_t bytes) {
