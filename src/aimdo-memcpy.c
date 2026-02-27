@@ -76,10 +76,13 @@ static THREAD_FUNC worker_proc(void *arg) {
         mutex_unlock(slot->mutex);
 
         if (t->type == TRANSFER_TYPE_MEMCPY) {
+            log(VVERBOSE, "%s: memcpy %zu\n", __func__, t->size);
             memcpy(t->dest, t->src, t->size);
         } else if (t->type == TRANSFER_TYPE_HTOD) {
+            log(VVERBOSE, "%s: htod %zu\n", __func__, t->size);
             CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)t->dest, t->src, t->size, slot->stream));
         } else if (t->type == TRANSFER_TYPE_EVENT) {
+            log(VVERBOSE, "%s: SEV@%llx -> %zu\n", __func__, slot->dev_signal, t->size);
             CHECK_CU(cuStreamWriteValue32(slot->stream, slot->dev_signal, t->size, CU_STREAM_WRITE_VALUE_DEFAULT));
         }
 
@@ -131,6 +134,7 @@ void vbar_slot_wait(void *s, void *stream_ptr) {
 
     slot->counter++;
     vbar_slot_transfer(s, NULL, NULL, slot->counter, TRANSFER_TYPE_EVENT);
+    log(VVERBOSE, "%s: WFE@%llx -> %zu\n", __func__, slot->dev_signal, (size_t)slot->counter);
     CHECK_CU(cuStreamWaitValue32((CUstream)stream_ptr, slot->dev_signal, slot->counter, CU_STREAM_WAIT_VALUE_GEQ));
 }
 
