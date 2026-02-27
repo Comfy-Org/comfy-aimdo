@@ -21,6 +21,7 @@ typedef struct {
     TransferSegment *tasks;
 
     CUstream stream;
+    CUcontext ctx;
 
     CUdeviceptr dev_signal;
     uint32_t counter;
@@ -44,6 +45,7 @@ void *vbar_slot_create(void *stream_ptr) {
     slot->mutex = mutex_create();
 
     if (!slot->mutex ||
+        !CHECK_CU(cuStreamGetCtx(slot->stream, &slot->ctx)) ||
         !CHECK_CU(cuMemAlloc(&slot->dev_signal, sizeof(uint32_t))) ||
         !CHECK_CU(cuMemsetD32(slot->dev_signal, 0, 1))) {
         goto fail;
@@ -62,6 +64,10 @@ fail:
 static THREAD_FUNC worker_proc(void *arg) {
     VBarSlot *slot = (VBarSlot *)arg;
 
+    if (!CHECK_CU(cuCtxSetCurrent(slot->ctx))) {
+        return 0;
+    }
+
     for (;;) {
         TransferSegment *t;
 
@@ -76,10 +82,10 @@ static THREAD_FUNC worker_proc(void *arg) {
         mutex_unlock(slot->mutex);
 
         if (t->type == TRANSFER_TYPE_MEMCPY) {
-            log(VVERBOSE, "%s: memcpy %zu\n", __func__, t->size);
+            log(VVERBOSE, "%s: memcpy %p %p %zu\n", __func__, t->src, t->dest, t->size);
             memcpy(t->dest, t->src, t->size);
         } else if (t->type == TRANSFER_TYPE_HTOD) {
-            log(VVERBOSE, "%s: htod %zu\n", __func__, t->size);
+            log(VVERBOSE, "%s: htod %p %llx %zu\n", __func__, t->src, (CUdeviceptr)t->dest, t->size);
             CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)t->dest, t->src, t->size, slot->stream));
         } else if (t->type == TRANSFER_TYPE_EVENT) {
             log(VVERBOSE, "%s: SEV@%llx -> %zu\n", __func__, slot->dev_signal, t->size);
