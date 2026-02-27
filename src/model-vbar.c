@@ -257,8 +257,9 @@ void vbar_deprioritize(void *vbar) {
 
 SHARED_EXPORT
 uint64_t vbar_get(void *vbar) {
-    log(DEBUG, "%s vbar=%p\n", __func__, vbar);
-    return (uint64_t)((ModelVBAR *)vbar)->vbar;
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    log(DEBUG, "%s vbar=%p = %llx\n", __func__, vbar, vbar->vbar);
+    return (uint64_t)vbar->vbar;
 }
 
 #define VBAR_FAULT_SUCCESS           0

@@ -64,6 +64,7 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         }
 
         buf->handles[buf->handle_count++] = handle;
+        log(VVERBOSE, "%s: allocate vrambuf chunk @%llx, size %zuk\n", buf->base_ptr + buf->allocated, to_allocate / K);
         buf->allocated += to_allocate;
     }
 
