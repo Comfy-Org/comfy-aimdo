@@ -4,7 +4,7 @@ from . import control
 lib = control.lib
 
 if lib is not None:
-    lib.vrambuf_create.argtypes = []
+    lib.vrambuf_create.argtypes = [ctypes.c_int, ctypes.c_size_t]
     lib.vrambuf_create.restype = ctypes.c_void_p
 
     lib.vrambuf_grow.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
@@ -16,8 +16,8 @@ if lib is not None:
     lib.vrambuf_destroy.argtypes = [ctypes.c_void_p]
 
 class VRAMBuffer:
-    def __init__(self):
-        self._ptr = lib.vrambuf_create()
+    def __init__(self, device=0, max_size=16 * 1024**3):
+        self._ptr = lib.vrambuf_create(device, max_size)
         if not self._ptr:
             raise RuntimeError("VRAM reservation failed")
         self.base_addr = lib.vrambuf_get(self._ptr)

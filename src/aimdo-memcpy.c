@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define SYNC_IT
+
 typedef struct TransferSegment {
     void *src;
     void *dest;
@@ -87,6 +89,9 @@ static THREAD_FUNC worker_proc(void *arg) {
         } else if (t->type == TRANSFER_TYPE_HTOD) {
             log(VVERBOSE, "%s: htod %p %llx %zu\n", __func__, t->src, (CUdeviceptr)t->dest, t->size);
             CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)t->dest, t->src, t->size, slot->stream));
+#ifdef SYNC_IT
+            CHECK_CU(cuStreamSynchronize(slot->stream));
+#endif
         } else if (t->type == TRANSFER_TYPE_EVENT) {
             log(VVERBOSE, "%s: SEV@%llx -> %zu\n", __func__, slot->dev_signal, t->size);
             CHECK_CU(cuStreamWriteValue32(slot->stream, slot->dev_signal, t->size, CU_STREAM_WRITE_VALUE_DEFAULT));
@@ -131,6 +136,9 @@ bool vbar_slot_transfer(void *s, void *src, void *dest, size_t size, int type) {
     *i = seg;
     mutex_unlock(slot->mutex);
 
+#ifdef SYNC_IT
+    thread_join(slot->thread);
+#endif
     return true;
 }
 
