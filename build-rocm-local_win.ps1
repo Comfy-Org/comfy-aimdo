@@ -44,7 +44,7 @@ $rspFile = "$root\build.rsp"
     "-I`"$(F $rocmBase)/include`"", "-I`"$(F $root)/src`"", "-I`"$(F $detoursDir)/include`""
     "-L`"$(F $rocmBase)/lib`"", "-L`"$(F $detoursDir)/lib.X64`""
     "-lamdhip64", "-ldxgi", "-ldxguid", "-ldetours"
-    "-o", "`"$(F $root)/comfy_aimdo/aimdo.dll`""
+    "-o", "`"$(F $root)/comfy_aimdo/aimdo_rocm.dll`""
 ) + $sources)
 
 & $clang "@$rspFile"
@@ -52,4 +52,4 @@ $exitCode = $LASTEXITCODE
 Remove-Item $rspFile -ErrorAction SilentlyContinue
 if ($exitCode -ne 0) { throw "Build failed (exit code $exitCode)" }
 Remove-Item -Recurse -Force $detoursDir
-Write-Host "Build successful: comfy_aimdo\aimdo.dll"
+Write-Host "Build successful: comfy_aimdo\aimdo_rocm.dll"
