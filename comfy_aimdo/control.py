@@ -3,29 +3,67 @@ import ctypes
 import platform
 from pathlib import Path
 import logging
+from enum import Enum
 
 lib = None
 
-def init():
+class AimdoImpl(Enum):
+    CUDA = "cuda"
+    ROCM = "rocm"
+
+
+def detect_vendor():
+    VENDORS = {
+        '0x10de': AimdoImpl.CUDA,
+        '0x1002': AimdoImpl.ROCM
+    }
+    system = platform.system()
+    if system == "Linux":
+        drm = Path("/sys/class/drm/")
+        for card in drm.glob("card?"):
+            with open(card / 'device/vendor', 'r') as v:
+                vendor_id = v.read().strip()
+                impl = VENDORS.get(vendor_id)
+                if impl:
+                    logging.info("Autodetected AIMDO implementation %s", impl)
+                    return impl
+    return None
+
+
+def init(implementation: AimdoImpl | None = None):
     global lib
 
     if lib is not None:
         return True
 
+    if implementation is None:
+        implementation = detect_vendor()
+
+    if implementation is None:
+        logging.warning("Could not autodetect AIMDO implementation")
+        return False
+
+    impl = {
+        AimdoImpl.CUDA: "aimdo",
+        AimdoImpl.ROCM: "aimdo_rocm"
+    }[implementation]
+
     try:
         base_path = Path(__file__).parent.resolve()
         system = platform.system()
+        errors = []
         if system == "Windows":
-            lib = ctypes.CDLL(str(base_path / "aimdo.dll"))
+            ext = "dll"
         elif system == "Linux":
-            lib = ctypes.CDLL(str(base_path / "aimdo.so"), mode=258)
+            ext = "so"
         else:
             logging.info(f"comfy-aimdo os not supported {system}")
             logging.info(f"NOTE: comfy-aimdo is currently only support for Windows and Linux")
             return False
+        lib = ctypes.CDLL(str(base_path / f"{impl}.{ext}"), mode=258)
     except Exception as e:
         logging.info(f"comfy-aimdo failed to load: {e}")
-        logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia GPUs")
+        logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia and AMD GPUs")
         return False
 
     lib.get_total_vram_usage.argtypes = []
