@@ -66,21 +66,26 @@ fail:
 static THREAD_FUNC worker_proc(void *arg) {
     VBarSlot *slot = (VBarSlot *)arg;
 
+    log(VVERBOSE, "%s: Worker created\n", __func__);
     if (!CHECK_CU(cuCtxSetCurrent(slot->ctx))) {
         return 0;
     }
 
     for (;;) {
         TransferSegment *t;
-
+        
+        log(VVERBOSE, "%s: Iterating ...\n", __func__);
         mutex_lock(slot->mutex);
+        log(VVERBOSE, "%s: Mutex Aquired\n", __func__);
         if (!slot->tasks) {
             slot->thread_state = THREAD_STATE_DEAD;
+            log(VVERBOSE, "%s: Exiting\n", __func__);
             mutex_unlock(slot->mutex);
             return 0;
         }
         t = slot->tasks;
         slot->tasks = t->next;
+        log(VVERBOSE, "%s: mutex released\n", __func__);
         mutex_unlock(slot->mutex);
 
         if (t->type == TRANSFER_TYPE_MEMCPY) {
@@ -122,7 +127,9 @@ bool vbar_slot_transfer(void *s, void *src, void *dest, size_t size, int type) {
         .type = type
     };
 
+    log(VVERBOSE, "%s: %p %p %zuk %d\n", __func__, src, dest, size / K, type);
     mutex_lock(slot->mutex);
+    log(VVERBOSE, "%s: mutex aquired\n, __func__");
     if (slot->thread_state == THREAD_STATE_DEAD) {
         thread_join(slot->thread);
         slot->thread_state = THREAD_STATE_NONE;
@@ -136,6 +143,7 @@ bool vbar_slot_transfer(void *s, void *src, void *dest, size_t size, int type) {
         i = &(*i)->next;
     }
     *i = seg;
+    log(VVERBOSE, "%s: mutex released\n", __func__);
     mutex_unlock(slot->mutex);
 
 #if SYNC_IT > 0
