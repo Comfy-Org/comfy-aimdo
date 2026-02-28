@@ -57,13 +57,13 @@ def init(implementation: AimdoImpl | None = None):
         elif system == "Linux":
             ext = "so"
         else:
-            logging.info(f"comfy-aimdo os not supported {system}")
-            logging.info(f"NOTE: comfy-aimdo is currently only support for Windows and Linux")
+            logging.info(f"comfy-aimdo unsupported operating system: {system}")
+            logging.info(f"NOTE: comfy-aimdo currently only supports Windows and Linux")
             return False
         lib = ctypes.CDLL(str(base_path / f"{impl}.{ext}"), mode=258)
     except Exception as e:
         logging.info(f"comfy-aimdo failed to load: {e}")
-        logging.info(f"NOTE: comfy-aimdo is currently only support for Nvidia and AMD GPUs")
+        logging.info(f"NOTE: comfy-aimdo currently only supports Nvidia and AMD GPUs")
         return False
 
     lib.get_total_vram_usage.argtypes = []
