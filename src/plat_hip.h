@@ -1,3 +1,7 @@
+#include <stdbool.h>
+bool aimdo_setup_hooks();
+void aimdo_teardown_hooks();
+
 // Map CUDA functions and constants to HIP equivalents
 #define CUDA_ERROR_OUT_OF_MEMORY hipErrorOutOfMemory
 #define CUDA_SUCCESS hipSuccess
@@ -23,10 +27,8 @@
 #define CUmemAccessDesc hipMemAccessDesc
 #define cuMemAddressFree hipMemAddressFree
 #define cuMemAddressReserve hipMemAddressReserve
-#define cuMemAllocAsync hipMallocAsync
 #define CUmemAllocationProp hipMemAllocationProp
 #define cuMemCreate hipMemCreate
-#define cuMemFreeAsync hipFreeAsync
 #define CUmemGenericAllocationHandle hipMemGenericAllocationHandle_t
 #define cuMemGetInfo hipMemGetInfo
 #define cuMemMap hipMemMap
@@ -35,3 +37,6 @@
 #define cuMemUnmap hipMemUnmap
 #define CUresult hipError_t
 #define CUstream hipStream_t
+
+CUresult cuMemFreeAsync(CUdeviceptr, CUstream);
+CUresult cuMemAllocAsync(CUdeviceptr*, size_t, CUstream);
