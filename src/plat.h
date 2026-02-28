@@ -50,8 +50,6 @@ size_t wddm_budget_deficit(int device, size_t bytes);
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
-static inline bool aimdo_setup_hooks() { return true; }
-static inline void aimdo_teardown_hooks() {}
 
 static inline size_t wddm_budget_deficit(int device, size_t bytes) {
     return cuda_budget_deficit(device, bytes);
