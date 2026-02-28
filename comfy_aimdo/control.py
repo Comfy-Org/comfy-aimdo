@@ -40,8 +40,8 @@ def init(implementation: AimdoImpl | None = None):
         implementation = detect_vendor()
 
     if implementation is None:
-        logging.warning("Could not autodetect AIMDO implementation")
-        return False
+        logging.warning("Could not autodetect AIMDO implementation, assuming Nvidia")
+        implementation = AimdoImpl.CUDA
 
     impl = {
         AimdoImpl.CUDA: "aimdo",
