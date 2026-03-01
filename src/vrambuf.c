@@ -1,12 +1,15 @@
 #include "vrambuf.h"
 
-#define VRAM_CHUNK_SIZE      (16ULL * 1024 * 1024)
+#define VRAM_CHUNK_SIZE      (2ULL * 1024 * 1024)
+#define VRAM_CHUNK_NR(x) ((x) / VRAM_CHUNK_SIZE)
+#define ALIGN_TO_CHUNK_SIZE(x) ((VRAM_CHUNK_NR(x) + 1) * VRAM_CHUNK_SIZE)
 
 SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
     VramBuffer *buf;
+    max_size = ALIGN_TO_CHUNK_SIZE(max_size);
 
-    buf = (VramBuffer *)calloc(1, sizeof(*buf) + sizeof(CUmemGenericAllocationHandle) * max_size / VRAM_CHUNK_SIZE);
+    buf = (VramBuffer *)calloc(1, sizeof(*buf) + sizeof(CUmemGenericAllocationHandle) * VRAM_CHUNK_NR(max_size));
     if (!buf) {
         return NULL;
     }

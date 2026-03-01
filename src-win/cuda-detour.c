@@ -30,12 +30,21 @@ static int aimdo_cuMemFreeAsync(CUdeviceptr dptr, CUstream hStream) {
     return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync);
 }
 
+#if defined(__HIP_PLATFORM_AMD__)
+static const HookEntry hooks[] = {
+    { (void**)&true_cuMemAlloc_v2,    aimdo_cuMemAlloc_v2,    "hipMalloc"    },
+    { (void**)&true_cuMemFree_v2,     aimdo_cuMemFree_v2,     "hipFree"     },
+    { (void**)&true_cuMemAllocAsync,  aimdo_cuMemAllocAsync,  "hipMallocAsync"  },
+    { (void**)&true_cuMemFreeAsync,   aimdo_cuMemFreeAsync,   "hipFreeAsync"    },
+};
+#else
 static const HookEntry hooks[] = {
     { (void**)&true_cuMemAlloc_v2,    aimdo_cuMemAlloc_v2,    "cuMemAlloc_v2"    },
     { (void**)&true_cuMemFree_v2,     aimdo_cuMemFree_v2,     "cuMemFree_v2"     },
     { (void**)&true_cuMemAllocAsync,  aimdo_cuMemAllocAsync,  "cuMemAllocAsync"  },
     { (void**)&true_cuMemFreeAsync,   aimdo_cuMemFreeAsync,   "cuMemFreeAsync"   },
 };
+#endif
 
 static inline bool install_hook_entrys(HMODULE h, HookEntry *hooks, size_t num_hooks) {
     DetourTransactionBegin();
@@ -61,15 +70,24 @@ static inline bool install_hook_entrys(HMODULE h, HookEntry *hooks, size_t num_h
     log(DEBUG, "%s: hooks successfully installed\n", __func__);
     return true;
 }
+static const char* driver_dlls[] = {
+#if defined(__HIP_PLATFORM_AMD__)
+    "amdhip64.dll", "amdhip64_7.dll", NULL
+#else
+    "nvcuda64.dll", "nvcuda.dll", NULL
+#endif
+};
 
 bool aimdo_setup_hooks() {
-    HMODULE h_real_cuda = GetModuleHandleA("nvcuda64.dll");
-    if (h_real_cuda == NULL) {
-        h_real_cuda = GetModuleHandleA("nvcuda.dll");
+    HMODULE h_real_cuda = NULL;
+    const char** dll = NULL;
+    for (dll = driver_dlls; *dll; dll++) {
+        h_real_cuda = GetModuleHandleA(*dll);
+        if (h_real_cuda) break;
     }
 
     if (h_real_cuda == NULL) {
-        log(ERROR, "%s: nvcuda driver not found in process memory", __func__);
+        log(ERROR, "%s: No suitable driver found in process memory", __func__);
         return false;
     }
 

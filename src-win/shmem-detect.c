@@ -3,12 +3,35 @@
 #include <windows.h>
 #include <dxgi1_4.h>
 
-#include <cuda.h>
+#if defined(__HIP_PLATFORM_AMD__)
+#  include <hip/hip_runtime.h>
+#else
+#  include <cuda.h>
+#endif
 
 static struct {
     IDXGIFactory4 *factory;
     IDXGIAdapter3 *adapter;
 } G_WDDM;
+
+#if defined(__HIP_PLATFORM_AMD__)
+static CUresult cuDeviceGetLuid(char* cuda_luid, unsigned int* deviceNodeMask, CUdevice dev) {
+    hipDeviceProp_t props;
+    if (hipGetDeviceProperties(&props, dev) != hipSuccess) {
+        return 1;
+    }
+    memcpy(cuda_luid, props.luid, sizeof(LUID));
+    *deviceNodeMask = props.luidDeviceNodeMask;
+    /* Verify the LUID is non-zero — AMD drivers may not populate it */
+    {
+        LUID zero = {0};
+        if (memcmp(cuda_luid, &zero, sizeof(LUID)) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+#endif
 
 bool aimdo_wddm_init(CUdevice dev)
 {

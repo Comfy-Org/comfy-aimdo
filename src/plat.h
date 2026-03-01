@@ -1,13 +1,16 @@
 #pragma once
 
-#include <cuda.h>
+#if defined(__HIP_PLATFORM_AMD__)
+#  include <hip/hip_runtime.h>
+#  include "plat_hip.h"
+#else
+#  include <cuda.h>
+#  include "plat_cuda.h"
+#endif
 
 /* NOTE: cuda_runtime.h is banned here. Always use the driver APIs.
- * Add duck-types here.
+ * Add duck-types in plat_cuda.h
  */
-
-typedef int cudaError_t;
-typedef struct CUstream_st *cudaStream_t;
 
 #include <string.h>
 #include <stdio.h>
@@ -47,8 +50,6 @@ size_t wddm_budget_deficit(int device, size_t bytes);
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
-static inline bool aimdo_setup_hooks() { return true; }
-static inline void aimdo_teardown_hooks() {}
 
 static inline size_t wddm_budget_deficit(int device, size_t bytes) {
     return cuda_budget_deficit(device, bytes);
@@ -162,13 +163,12 @@ size_t vbars_free(size_t size);
 void vbars_analyze();
 
 /* pyt-cu-alloc.c */
-int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size);
-int aimdo_cuda_free(CUdeviceptr dptr);
-
-int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
-int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
-                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
+CUresult aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size);
+CUresult aimdo_cuda_free(CUdeviceptr dptr);
+CUresult aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
+                                 CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
+CUresult aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
+                               CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
 
 void allocations_analyze();
 
