@@ -42,7 +42,10 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
         return 1;
     }
 
-    if (now - last_check >= 2000) {
+#if !defined(_WIN32) && !defined(_WIN64)
+    if (now - last_check >= 200)
+#endif
+    {
         last_check = now;
         CUdevice device;
         if (!CHECK_CU(cuCtxGetDevice(&device))) {
