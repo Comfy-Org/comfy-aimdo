@@ -3,6 +3,7 @@ import ctypes
 import platform
 from pathlib import Path
 import logging
+import importlib.util
 from enum import Enum
 
 lib = None
@@ -13,20 +14,24 @@ class AimdoImpl(Enum):
 
 
 def detect_vendor():
-    VENDORS = {
-        '0x10de': AimdoImpl.CUDA,
-        '0x1002': AimdoImpl.ROCM
-    }
-    system = platform.system()
-    if system == "Linux":
-        drm = Path("/sys/class/drm/")
-        for card in drm.glob("card?"):
-            with open(card / 'device/vendor', 'r') as v:
-                vendor_id = v.read().strip()
-                impl = VENDORS.get(vendor_id)
-                if impl:
-                    logging.info("Autodetected AIMDO implementation %s", impl)
-                    return impl
+    version = ""
+    try:
+        torch_spec = importlib.util.find_spec("torch")
+        for folder in torch_spec.submodule_search_locations:
+            ver_file = Path(folder) / "version.py"
+            if ver_file.is_file():
+                spec = importlib.util.spec_from_file_location("torch_version_import", ver_file)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                version = module.__version__
+    except Exception as e:
+        logging.warning("Failed to detect Torch version")
+        pass
+
+    if '+cu' in version:
+        return AimdoImpl.CUDA
+    if '+rocm' in version:
+        return AimdoImpl.ROCM
     return None
 
 
