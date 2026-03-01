@@ -1,18 +1,5 @@
 #include "plat.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#define GET_TICK() GetTickCount64()
-#else
-#include <sys/time.h>
-static inline uint64_t get_tick_linux() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-}
-#define GET_TICK() get_tick_linux()
-#endif
-
 #define CUDA_PAGE_SIZE (2 << 20)
 #define ALIGN_UP(s) (((s) + CUDA_PAGE_SIZE - 1) & ~(CUDA_PAGE_SIZE - 1))
 #define SIZE_HASH_SIZE 1024
@@ -31,8 +18,6 @@ static inline unsigned int size_hash(CUdeviceptr ptr) {
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
                             int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
-    static uint64_t last_check = 0;
-    uint64_t now = GET_TICK();
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -42,14 +27,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
         return 1;
     }
 
-    if (now - last_check >= 2000) {
-        last_check = now;
-        CUdevice device;
-        if (!CHECK_CU(cuCtxGetDevice(&device))) {
-            return 1;
-        }
-        vbars_free(wddm_budget_deficit(device, size));
-    }
+    vbars_free(budget_deficit(size));
 
     if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
         *devPtr = dptr;

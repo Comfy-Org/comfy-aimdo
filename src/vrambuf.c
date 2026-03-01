@@ -43,7 +43,7 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         grow_to = buf->max_size;
     }
 
-    vbars_free(wddm_budget_deficit(buf->device, grow_to - buf->allocated));
+    vbars_free(budget_deficit(grow_to - buf->allocated));
     while (buf->allocated < grow_to) {
         size_t to_allocate = grow_to - buf->allocated;
         if (to_allocate > VRAM_CHUNK_SIZE) {
