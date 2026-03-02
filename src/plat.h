@@ -67,6 +67,12 @@ static inline void plat_cleanup() {
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
+/* NOTE: align_to must be power of 2 */
+#define ALIGN_UP(x, align_to) (((x) + (align_to) - 1) & ~((align_to) - 1))
+
+#define CUDA_PAGE_SIZE   (2 << 20)
+#define CUDA_ALIGN_UP(s) ALIGN_UP(s, CUDA_PAGE_SIZE)
+
 typedef unsigned long long ull;
 #define K 1024
 #define M (K * K)

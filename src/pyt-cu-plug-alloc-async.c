@@ -1,7 +1,6 @@
 #include "plat.h"
 
-#define CUDA_PAGE_SIZE (2 << 20)
-#define ALIGN_UP(s) (((s) + CUDA_PAGE_SIZE - 1) & ~(CUDA_PAGE_SIZE - 1))
+
 #define SIZE_HASH_SIZE 1024
 
 typedef struct SizeEntry {
@@ -45,7 +44,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
 
 success:
 
-    total_vram_usage += ALIGN_UP(size);
+    total_vram_usage += CUDA_ALIGN_UP(size);
 
     {
         unsigned int h = size_hash(*devPtr);
@@ -86,7 +85,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
             status = true_cuMemFreeAsync(devPtr, hStream);
             if (CHECK_CU(status)) {
-                total_vram_usage -= ALIGN_UP(entry->size);
+                total_vram_usage -= CUDA_ALIGN_UP(entry->size);
             }
 
             free(entry);

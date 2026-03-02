@@ -39,7 +39,7 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         return true;
     }
 
-    grow_to = (required_size + VRAM_CHUNK_SIZE - 1) & ~(VRAM_CHUNK_SIZE - 1);
+    grow_to = ALIGN_UP(required_size, VRAM_CHUNK_SIZE);
     if (grow_to > buf->max_size) {
         grow_to = buf->max_size;
     }
