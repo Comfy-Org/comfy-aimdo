@@ -40,12 +40,13 @@ static inline void one_time_setup() {
 
 static bool vbars_dirty;
 
-void vbars_analyze() {
+SHARED_EXPORT
+uint64_t vbars_analyze(bool only_dirty) {
     size_t calculated_total_vram = 0;
 
     one_time_setup();
-    if (!vbars_dirty) {
-        return;
+    if (only_dirty && !vbars_dirty) {
+        return 0;
     }
     vbars_dirty = false;
     log(DEBUG, "---------------- VBAR Usage ---------------\n")
@@ -82,6 +83,7 @@ void vbars_analyze() {
     }
 
     log(DEBUG, "Total VRAM for VBARs: %zu MB\n", calculated_total_vram / M);
+    return (uint64_t)calculated_total_vram;
 }
 
 static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {

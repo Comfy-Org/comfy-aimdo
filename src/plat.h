@@ -190,7 +190,8 @@ fail:
 
 /* model_vbar.c */
 size_t vbars_free(size_t size);
-void vbars_analyze();
+SHARED_EXPORT
+uint64_t vbars_analyze(bool only_dirty);
 
 /* pyt-cu-alloc.c */
 int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size);
