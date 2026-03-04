@@ -364,6 +364,7 @@ void vbar_free(void *vbar) {
         mod1(mv, page_nr, true, true);
     }
     remove_vbar(mv);
+    CHECK_CU(cuMemAddressFree(mv->vbar, (size_t)mv->nr_pages * VBAR_PAGE_SIZE));
     free(mv);
 }
 
