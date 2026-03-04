@@ -14,8 +14,8 @@ static inline unsigned int size_hash(CUdeviceptr ptr) {
     return ((uintptr_t)ptr >> 10 ^ (uintptr_t)ptr >> 21) % SIZE_HASH_SIZE;
 }
 
-int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
+CUresult aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
+                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -60,8 +60,8 @@ success:
     return 0;
 }
 
-int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
-                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
+CUresult aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
+                          CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
     SizeEntry *entry;
     SizeEntry **prev;
     unsigned int h;
@@ -81,7 +81,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
         if (entry->ptr == devPtr) {
             *prev = entry->next;
 
-            log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
+            log(VVERBOSE, "Freed: ptr=%p, size=%zuk, stream=%p\n", devPtr, entry->size / K, hStream);
             status = true_cuMemFreeAsync(devPtr, hStream);
             if (CHECK_CU(status)) {
                 total_vram_usage -= CUDA_ALIGN_UP(entry->size);
@@ -100,7 +100,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 
 #if !defined(_WIN32) && !defined(_WIN64)
 
-cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
+CUresult cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
     if (!devPtr) {
         return 1; /* cudaErrorInvalidValue */
     }
@@ -110,7 +110,7 @@ cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
                 2 /* cudaErrorMemoryAllocation */ : 0;
 }
 
-cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
+CUresult cudaFreeAsync(void* devPtr, cudaStream_t stream) {
     return aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync) ?
                 400 /* cudaErrorInvalidDevicePointer */ : 0;
 }
