@@ -33,6 +33,9 @@ if lib is not None:
     lib.vbar_free_memory.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
     lib.vbar_free_memory.restype = ctypes.c_uint64
 
+    lib.vbars_analyze.argtypes = [ctypes.c_bool]
+    lib.vbars_analyze.restype = ctypes.c_uint64
+
 class ModelVBAR:
     def __init__(self, size, device):
         self._ptr = lib.vbar_allocate(int(size), device)
@@ -113,3 +116,8 @@ def vbar_signature_compare(a, b):
 
 def vbars_reset_watermark_limits():
     lib.vbars_reset_watermark_limits()
+
+def vbars_analyze():
+    if lib is None:
+        return 0
+    return lib.vbars_analyze(False)

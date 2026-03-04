@@ -36,7 +36,7 @@ void aimdo_analyze() {
     log(DEBUG, "  Aimdo Recorded Usage:  %7zu MB\n", total_vram_usage / M);
     log(DEBUG, "  Cuda:  %7zu MB / %7zu MB Free\n", free_bytes / M, total_bytes / M);
 
-    vbars_analyze();
+    vbars_analyze(true);
     allocations_analyze();
 }
 
