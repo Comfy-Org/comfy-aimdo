@@ -121,7 +121,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     st_unlock();
 
     log(ERROR, "%s: could not account free at %p\n", __func__, devPtr);
-    return cuMemFreeAsync((CUdeviceptr)devPtr, (CUstream)hStream);
+    return true_cuMemFreeAsync(devPtr, hStream);
 }
 
 #if !defined(_WIN32) && !defined(_WIN64)
