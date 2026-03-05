@@ -14,6 +14,27 @@ static inline unsigned int size_hash(CUdeviceptr ptr) {
     return ((uintptr_t)ptr >> 10 ^ (uintptr_t)ptr >> 21) % SIZE_HASH_SIZE;
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+static CRITICAL_SECTION size_table_lock;
+static volatile LONG size_table_lock_init;
+
+static inline void st_lock(void) {
+    if (!InterlockedCompareExchange(&size_table_lock_init, 1, 0)) {
+        InitializeCriticalSection(&size_table_lock);
+        InterlockedExchange(&size_table_lock_init, 2);
+    }
+    while (size_table_lock_init != 2) { /* spin until init done */ }
+    EnterCriticalSection(&size_table_lock);
+}
+static inline void st_unlock(void) { LeaveCriticalSection(&size_table_lock); }
+#else
+#include <pthread.h>
+static pthread_mutex_t size_table_lock = PTHREAD_MUTEX_INITIALIZER;
+static inline void st_lock(void) { pthread_mutex_lock(&size_table_lock); }
+static inline void st_unlock(void) { pthread_mutex_unlock(&size_table_lock); }
+#endif
+
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
                             int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
     CUdeviceptr dptr;
@@ -43,6 +64,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
 
 success:
 
+    st_lock();
     total_vram_usage += CUDA_ALIGN_UP(size);
 
     {
@@ -55,6 +77,7 @@ success:
             size_table[h] = entry;
         }
     }
+    st_unlock();
 
     log(VVERBOSE, "%s (return): ptr=%p\n", __func__, *devPtr);
     return 0;
@@ -73,6 +96,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
         return 0;
     }
 
+    st_lock();
     h = size_hash(devPtr);
     entry = size_table[h];
     prev = &size_table[h];
@@ -87,12 +111,14 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
                 total_vram_usage -= CUDA_ALIGN_UP(entry->size);
             }
 
+            st_unlock();
             free(entry);
             return status;
         }
         prev = &entry->next;
         entry = entry->next;
     }
+    st_unlock();
 
     log(ERROR, "%s: could not account free at %p\n", __func__, devPtr);
     return cuMemFreeAsync((CUdeviceptr)devPtr, (CUstream)hStream);
