@@ -36,6 +36,14 @@ if lib is not None:
     lib.vbars_analyze.argtypes = [ctypes.c_bool]
     lib.vbars_analyze.restype = ctypes.c_uint64
 
+    lib.vbar_get_nr_pages.argtypes = [ctypes.c_void_p]
+    lib.vbar_get_nr_pages.restype = ctypes.c_size_t
+
+    lib.vbar_get_watermark.argtypes = [ctypes.c_void_p]
+    lib.vbar_get_watermark.restype = ctypes.c_size_t
+
+    lib.vbar_get_residency.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
+
 class ModelVBAR:
     def __init__(self, size, device):
         self._ptr = lib.vbar_allocate(int(size), device)
@@ -92,6 +100,22 @@ class ModelVBAR:
 
     def free_memory(self, size_bytes):
         return lib.vbar_free_memory(self._ptr, int(size_bytes))
+
+    def get_nr_pages(self):
+        return lib.vbar_get_nr_pages(self._ptr)
+
+    def get_watermark(self):
+        return lib.vbar_get_watermark(self._ptr)
+
+    def get_residency(self):
+        """Returns a list of per-page status flags.
+        Bit 0 (& 1): resident in VRAM
+        Bit 1 (& 2): pinned
+        """
+        nr_pages = self.get_nr_pages()
+        buf = (ctypes.c_uint8 * nr_pages)()
+        lib.vbar_get_residency(self._ptr, buf, nr_pages)
+        return list(buf)
 
     def __del__(self):
         if hasattr(self, '_ptr') and self._ptr:

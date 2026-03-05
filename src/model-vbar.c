@@ -376,6 +376,29 @@ size_t vbar_loaded_size(void *vbar) {
 }
 
 SHARED_EXPORT
+size_t vbar_get_nr_pages(void *vbar) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    return mv->nr_pages;
+}
+
+SHARED_EXPORT
+size_t vbar_get_watermark(void *vbar) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    return mv->watermark;
+}
+
+SHARED_EXPORT
+void vbar_get_residency(void *vbar, uint8_t *out, size_t max_pages) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    size_t n = mv->nr_pages < max_pages ? mv->nr_pages : max_pages;
+    for (size_t i = 0; i < n; i++) {
+        ResidentPage *rp = &mv->residency_map[i];
+        /* bit 0: resident, bit 1: pinned */
+        out[i] = (rp->handle ? 1 : 0) | (rp->pinned ? 2 : 0);
+    }
+}
+
+SHARED_EXPORT
 uint64_t vbar_free_memory(void *vbar, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     size_t pages_to_free = VBAR_GET_PAGE_NR_UP(size);
