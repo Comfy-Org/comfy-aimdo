@@ -138,7 +138,7 @@ cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
 
 cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
     return aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync) ?
-                400 /* cudaErrorInvalidDevicePointer */ : 0;
+                17 /* cudaErrorInvalidDevicePointer */ : 0;
 }
 
 #endif
