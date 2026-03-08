@@ -6,6 +6,7 @@ uint64_t total_vram_usage;
 uint64_t total_vram_last_check;
 ssize_t deficit_sync;
 const char *prevailing_deficit_method;
+CUcontext aimdo_cuda_ctx;
 
 bool cuda_budget_deficit() {
     uint64_t now = GET_TICK();
@@ -54,6 +55,8 @@ bool init(int cuda_device_id) {
 
     if (!CHECK_CU(cuDeviceGet(&dev, cuda_device_id)) ||
         !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev)) ||
+        !CHECK_CU(cuDevicePrimaryCtxRetain(&aimdo_cuda_ctx, dev)) ||
+        !CHECK_CU(cuCtxSetCurrent(aimdo_cuda_ctx)) ||
         !plat_init(dev)) {
         return false;
     }
