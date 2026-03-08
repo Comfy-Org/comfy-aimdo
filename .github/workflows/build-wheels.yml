@@ -85,6 +85,19 @@ jobs:
           name: wheels-none
           path: ./wheelhouse-none/*.whl
 
+      - name: Pre-fetch virtualenv.pyz (Windows)
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $dest = "$env:LOCALAPPDATA\pypa\cibuildwheel\Cache\virtualenv-20.26.6.pyz"
+          New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+          $headers = @{ Authorization = "token $env:GH_TOKEN" }
+          $url = "https://github.com/pypa/get-virtualenv/blob/20.26.6/public/virtualenv.pyz?raw=true"
+          Invoke-WebRequest -Uri $url -OutFile $dest -Headers $headers -UseBasicParsing
+          Write-Host "✅ Downloaded virtualenv.pyz"
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
         env:
