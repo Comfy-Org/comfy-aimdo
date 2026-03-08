@@ -137,8 +137,10 @@ cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
 }
 
 cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
-    return aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync) ?
-                17 /* cudaErrorInvalidDevicePointer */ : 0;
+    /* CUresult and cudaError_t values are identical in CUDA 12+ for all
+     * errors cuMemFreeAsync can return (1, 3, 4, 101, 201, 801).
+     */
+    return (cudaError_t)aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync);
 }
 
 #endif
