@@ -126,17 +126,27 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 
 #if !defined(_WIN32) && !defined(_WIN64)
 
+static inline void ensure_ctx(void) {
+    CUcontext ctx = NULL;
+
+    if (cuCtxGetCurrent(&ctx) != CUDA_SUCCESS || !ctx) {
+        cuCtxSetCurrent(aimdo_cuda_ctx);
+    }
+}
+
 cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
     if (!devPtr) {
         return 1; /* cudaErrorInvalidValue */
     }
 
+    ensure_ctx();
     return aimdo_cuda_malloc_async((CUdeviceptr*)devPtr, size,
                                    (CUstream)stream, cuMemAllocAsync) ?
                 2 /* cudaErrorMemoryAllocation */ : 0;
 }
 
 cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
+    ensure_ctx();
     /* CUresult and cudaError_t values are identical in CUDA 12+ for all
      * errors cuMemFreeAsync can return (1, 3, 4, 101, 201, 801).
      */

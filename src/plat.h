@@ -205,5 +205,6 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 void allocations_analyze();
 
 /* control.c */
+extern CUcontext aimdo_cuda_ctx;
 SHARED_EXPORT
 void aimdo_analyze();
