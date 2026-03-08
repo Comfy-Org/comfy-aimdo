@@ -66,9 +66,6 @@ def run_model(weights, cpu_weight, sleep=0):
     gc.collect()
     torch.cuda.empty_cache()
 
-#FIXME: Get rid of this
-dummy = torch.randn(1, device=torch.device("cuda:0"))
-
 gpu_size = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
 dtype = torch.float16
 
