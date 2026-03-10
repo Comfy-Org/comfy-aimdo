@@ -110,16 +110,18 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     return do_free;
 }
 
-size_t vbars_free(size_t size) {
-    size_t pages_needed = VBAR_GET_PAGE_NR_UP(size);
+size_t vbars_free(ssize_t size) {
+    size_t pages_needed;
     bool dirty = false;
 
     one_time_setup();
     vbars_dirty = true;
 
-    if (!size) {
+    if (size <= 0) {
         return 0;
     }
+
+    pages_needed = VBAR_GET_PAGE_NR_UP((size_t)size);
 
     for (ModelVBAR *i = lowest_priority.higher; pages_needed && i != &highest_priority;
          i = i->higher) {
@@ -324,7 +326,7 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
 
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
-        if (budget_deficit(VBAR_PAGE_SIZE) ||
+        if (budget_deficit(VBAR_PAGE_SIZE) > 0 ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");
