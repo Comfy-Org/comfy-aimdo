@@ -140,14 +140,26 @@ static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {
     return cursor;
 }
 
-static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
+static inline size_t spend_surplus_on_cursor(ModelVBAR *mv, size_t target, size_t cursor,
+                                             ssize_t *surplus) {
+    while (*surplus >= (ssize_t)VBAR_PAGE_SIZE && cursor < target && cursor < mv->watermark) {
+        *surplus -= (ssize_t)VBAR_PAGE_SIZE;
+        cursor = move_cursor_to_absent(mv, cursor + 1);
+    }
+    return cursor;
+}
+
+static void vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
     size_t cursor = move_cursor_to_absent(mv, 0);
     bool synced = false;
 
+    cursor = spend_surplus_on_cursor(mv, target, cursor, &surplus);
+
     for (ModelVBAR *i = lowest_priority.higher;
-         cursor < target && cursor < mv->watermark && i != &highest_priority;
+         ((cursor < target && cursor < mv->watermark) || surplus < 0) && i != &highest_priority;
          i = i->higher) {
-        for (; cursor < target && cursor < mv->watermark && i->watermark > i->watermark_limit;
+        for (; ((cursor < target && cursor < mv->watermark) || surplus < 0) &&
+               i->watermark > i->watermark_limit;
              i->watermark--) {
             ResidentPage *rp = &i->residency_map[i->watermark - 1];
 
@@ -156,7 +168,8 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
                 synced = true;
             }
             if (mod1(i, i->watermark - 1, true, false)) {
-                cursor = move_cursor_to_absent(mv, cursor + 1);
+                surplus += (ssize_t)VBAR_PAGE_SIZE;
+                cursor = spend_surplus_on_cursor(mv, target, cursor, &surplus);
             }
         }
     }
@@ -315,7 +328,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
                 return VBAR_FAULT_ERROR;
             }
             log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...\n");
-            vbars_free_for_vbar(mv, page_end);
+            vbars_free_for_vbar(mv, page_end, 0);
             if (page_nr >= mv->watermark) {
                 log(DEBUG, "VBAR allocation cancelled due to watermark reduction\n");
                 return VBAR_FAULT_OOM;
