@@ -116,18 +116,18 @@ extern uint64_t total_vram_last_check;
 extern ssize_t deficit_sync;
 extern const char *prevailing_deficit_method;
 
-static inline size_t budget_deficit(size_t size) {
+static inline ssize_t budget_deficit(size_t size) {
     ssize_t deficit_simple, deficit_delta;
-    size_t deficit;
+    ssize_t deficit;
 
     poll_budget_deficit();
     deficit_simple = (ssize_t)(total_vram_usage + VRAM_HEADROOM + size) - (ssize_t)vram_capacity;
     deficit_delta = deficit_sync + (ssize_t)total_vram_usage - (ssize_t)total_vram_last_check + size;
-    deficit = (size_t)MAX(MAX(deficit_simple, deficit_delta), (ssize_t)0);
-    if (deficit) {
+    deficit = MAX(deficit_simple, deficit_delta);
+    if (deficit > 0) {
         log(DEBUG, "%s: Prevailing Method: %s Deficit: %zu Alloc Size %zu\n", __func__,
             deficit_simple > deficit_delta ? "simple" : prevailing_deficit_method,
-            deficit / M, size / M);
+            (size_t)deficit / M, size / M);
     }
     return deficit;
 }
@@ -185,7 +185,7 @@ fail:
 }
 
 /* model_vbar.c */
-size_t vbars_free(size_t size);
+size_t vbars_free(ssize_t size);
 SHARED_EXPORT
 uint64_t vbars_analyze(bool only_dirty);
 
