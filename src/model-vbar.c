@@ -140,14 +140,19 @@ static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {
 
 static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
     size_t cursor = move_cursor_to_absent(mv, 0);
-
-    CHECK_CU(cuCtxSynchronize());
+    bool synced = false;
 
     for (ModelVBAR *i = lowest_priority.higher;
          cursor < target && cursor < mv->watermark && i != &highest_priority;
          i = i->higher) {
         for (; cursor < target && cursor < mv->watermark && i->watermark > i->watermark_limit;
              i->watermark--) {
+            ResidentPage *rp = &i->residency_map[i->watermark - 1];
+
+            if (!synced && rp->handle && !rp->pinned) {
+                CHECK_CU(cuCtxSynchronize());
+                synced = true;
+            }
             if (mod1(i, i->watermark - 1, true, false)) {
                 cursor = move_cursor_to_absent(mv, cursor + 1);
             }
