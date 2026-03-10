@@ -287,11 +287,14 @@ uint64_t vbar_get(void *vbar) {
 #define VBAR_FAULT_OOM               1
 #define VBAR_FAULT_ERROR             2
 
+#define VBAR_MISS_ALLOC_GRACE             (512 * M)
+
 SHARED_EXPORT
 int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     int ret = VBAR_FAULT_SUCCESS;
     size_t signature_index = 0;
+    bool miss_alloc_checked = false;
 
     size_t page_end = VBAR_GET_PAGE_NR_UP(offset + size);
 
@@ -319,6 +322,18 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
             continue;
         }
 
+        if (!miss_alloc_checked) {
+            vbars_free_for_vbar(mv, page_end,
+                                (ssize_t)VBAR_MISS_ALLOC_GRACE -
+                                budget_deficit((page_end - page_nr) * VBAR_PAGE_SIZE));
+            miss_alloc_checked = true;
+
+            if (page_end > mv->watermark) {
+                log(DEBUG, "VBAR allocation cancelled due to allocation-check watermark reduction\n");
+                return VBAR_FAULT_OOM;
+            }
+        }
+
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
         if (budget_deficit(VBAR_PAGE_SIZE) > 0 ||
@@ -328,9 +343,9 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
                 return VBAR_FAULT_ERROR;
             }
             log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...\n");
-            vbars_free_for_vbar(mv, page_end, 0);
-            if (page_nr >= mv->watermark) {
-                log(DEBUG, "VBAR allocation cancelled due to watermark reduction\n");
+            vbars_free(VBAR_PAGE_SIZE);
+            if (page_end > mv->watermark) {
+                log(DEBUG, "VBAR allocation cancelled due to backup-free watermark reduction\n");
                 return VBAR_FAULT_OOM;
             }
             if ((err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
