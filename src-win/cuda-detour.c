@@ -15,11 +15,11 @@ static int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream);
 static int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream);
 
 static int aimdo_cuMemAlloc_v2(CUdeviceptr* dptr, size_t size) {
-    return aimdo_cuda_malloc(dptr, size);
+    return aimdo_cuda_malloc(dptr, size, true_cuMemAlloc_v2);
 }
 
 static int aimdo_cuMemFree_v2(CUdeviceptr dptr) {
-    return aimdo_cuda_free(dptr);
+    return aimdo_cuda_free(dptr, true_cuMemFree_v2);
 }
 
 static int aimdo_cuMemAllocAsync(CUdeviceptr* dptr, size_t size, CUstream hStream) {
