@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-SRCS="src/*.c"
+SRCS="src/*.c src-posix/*.c"
 docker build -t manylinux-cuda -f docker/cuda-on-manylinux.Dockerfile .
 docker run --rm -v $(pwd):/project -w /project manylinux-cuda \
     gcc -shared -o comfy_aimdo/aimdo.so -fPIC -Werror \
