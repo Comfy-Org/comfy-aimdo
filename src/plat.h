@@ -40,10 +40,6 @@ void aimdo_teardown_hooks();
 
 #define SHARED_EXPORT
 
-/* On Linux we are the apparent implementation of cudart */
-#define aimdo_cuda_malloc cudaMalloc
-#define aimdo_cuda_free cudaFree
-
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
 static inline bool aimdo_setup_hooks() { return true; }
@@ -194,8 +190,10 @@ SHARED_EXPORT
 uint64_t vbars_analyze(bool only_dirty);
 
 /* pyt-cu-alloc.c */
-int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size);
-int aimdo_cuda_free(CUdeviceptr dptr);
+int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size,
+                      int (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t));
+int aimdo_cuda_free(CUdeviceptr dptr,
+                    int (*true_cuMemFree_v2)(CUdeviceptr));
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
                             int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
