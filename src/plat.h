@@ -40,9 +40,11 @@ void aimdo_teardown_hooks();
 
 #define SHARED_EXPORT
 
-/* On Linux we are the apparent implementation of cudart */
-#define aimdo_cuda_malloc cudaMalloc
-#define aimdo_cuda_free cudaFree
+/* On Linux, only intercept async allocations (cudaMallocAsync/cudaFreeAsync).
+ * Do NOT export cudaMalloc/cudaFree — the non-async path uses virtual memory
+ * (vrambuf) which is incompatible with extensions that mix real cudaMalloc
+ * allocations with aimdo's virtual memory in the same CUDA context.
+ */
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
