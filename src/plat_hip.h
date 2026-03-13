@@ -43,7 +43,9 @@ void aimdo_teardown_hooks();
 #define cuDevicePrimaryCtxRetain hipDevicePrimaryCtxRetain
 
 CUresult cuMemFreeAsync(CUdeviceptr, CUstream);
+CUresult cuMemFree_v2(CUdeviceptr);
 CUresult cuMemAllocAsync(CUdeviceptr*, size_t, CUstream);
+CUresult cuMemAlloc_v2(CUdeviceptr*, size_t);
 
 // On Windows we can define these without problems. On Linux this will cause recursion in
 // the implementations.

@@ -4,7 +4,17 @@
 
 
 CUresult (*hipMallocAsyncOriginal)(CUdeviceptr*, size_t, CUstream);
+CUresult (*hipMallocOriginal)(CUdeviceptr*, size_t);
 CUresult (*hipFreeAsyncOriginal)(CUdeviceptr*, CUstream);
+CUresult (*hipFreeOriginal)(CUdeviceptr*);
+
+CUresult cuMemAlloc_v2(CUdeviceptr* ptr, size_t size) {
+	return hipMallocOriginal(ptr, size);
+}
+
+CUresult cuMemFree_v2(CUdeviceptr ptr) {
+	return hipFreeOriginal(ptr);
+}
 
 // Provide these as stubs to call the original allocation functions
 CUresult cuMemAllocAsync(CUdeviceptr* ptr, size_t size, CUstream h) {
@@ -21,6 +31,8 @@ bool aimdo_setup_hooks() {
 	if (!handle) return false;
 	hipMallocAsyncOriginal = dlsym(handle, "hipMallocAsync");
 	hipFreeAsyncOriginal = dlsym(handle, "hipFreeAsync");
+	hipMallocOriginal = dlsym(handle, "hipMalloc");
+	hipFreeOriginal = dlsym(handle, "hipFree");
 	return true;
 }
 
