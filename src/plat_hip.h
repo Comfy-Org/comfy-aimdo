@@ -41,6 +41,8 @@ void aimdo_teardown_hooks();
 #define cuCtxGetCurrent hipCtxGetCurrent
 #define cuCtxSetCurrent hipCtxSetCurrent
 #define cuDevicePrimaryCtxRetain hipDevicePrimaryCtxRetain
+#define cuMemAllocHost(p, size) hipHostMalloc((p), (size), 0)
+#define cuMemFreeHost hipHostFree
 
 CUresult cuMemFreeAsync(CUdeviceptr, CUstream);
 CUresult cuMemFree_v2(CUdeviceptr);
