@@ -191,14 +191,14 @@ uint64_t vbars_analyze(bool only_dirty);
 
 /* pyt-cu-alloc.c */
 int aimdo_cuda_malloc(CUdeviceptr *dptr, size_t size,
-                      int (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t));
+                      CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t));
 int aimdo_cuda_free(CUdeviceptr dptr,
-                    int (*true_cuMemFree_v2)(CUdeviceptr));
+                    CUresult (*true_cuMemFree_v2)(CUdeviceptr));
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
+                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
 int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
-                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
+                          CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
 
 void allocations_analyze();
 

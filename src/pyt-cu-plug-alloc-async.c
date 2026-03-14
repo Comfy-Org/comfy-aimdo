@@ -85,7 +85,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
 }
 
 int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
-                      int (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
+                      CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -114,7 +114,7 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
 }
 
 int aimdo_cuda_free(CUdeviceptr devPtr,
-                    int (*true_cuMemFree_v2)(CUdeviceptr)) {
+                    CUresult (*true_cuMemFree_v2)(CUdeviceptr)) {
     CUresult status;
 
     if (!devPtr) {
@@ -134,7 +134,7 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
 }
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            int (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
+                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -168,7 +168,7 @@ success:
 }
 
 int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
-                          int (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
+                          CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
     CUresult status;
 
     log(VVERBOSE, "%s (start) ptr=%p\n", __func__, devPtr);
