@@ -68,7 +68,7 @@ jobs:
             src/*.c src-win/*.c ^
             /Isrc /IC:/CUDA_SDK/include /IC:/Detours/include /Fe:comfy_aimdo/aimdo.dll ^
             /link /LIBPATH:C:/CUDA_SDK/lib/x64 /LIBPATH:C:/Detours/lib.X64 ^
-            cuda.lib cudart.lib dxgi.lib dxguid.lib detours.lib onecore.lib
+            cuda.lib dxgi.lib dxguid.lib detours.lib onecore.lib
         shell: cmd
 
       - name: Build default Stub Wheel
