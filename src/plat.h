@@ -1,13 +1,16 @@
 #pragma once
 
-#include <cuda.h>
+#if defined(__HIP_PLATFORM_AMD__)
+#  include <hip/hip_runtime.h>
+#  include "plat_hip.h"
+#else
+#  include <cuda.h>
+#  include "plat_cuda.h"
+#endif
 
 /* NOTE: cuda_runtime.h is banned here. Always use the driver APIs.
- * Add duck-types here.
+ * Add duck-types in plat_cuda.h
  */
-
-typedef int cudaError_t;
-typedef struct CUstream_st *cudaStream_t;
 
 #include <string.h>
 #include <stdio.h>
@@ -42,8 +45,6 @@ void aimdo_teardown_hooks();
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
-static inline bool aimdo_setup_hooks() { return true; }
-static inline void aimdo_teardown_hooks() {}
 
 static inline bool poll_budget_deficit() {
     return cuda_budget_deficit();

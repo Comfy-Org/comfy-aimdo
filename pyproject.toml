@@ -17,7 +17,7 @@ Repository = "https://github.com/Comfy-Org/comfy-aimdo"
 packages = ["comfy_aimdo"]
 
 [tool.setuptools.package-data]
-"comfy_aimdo" = ["*.so", "*.dll"]
+"comfy_aimdo" = ["*.so", "*.dll", "_rocm_init.py"]
 
 [tool.setuptools_scm]
 version_file = "comfy_aimdo/_version.py"
