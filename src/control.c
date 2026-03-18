@@ -53,7 +53,8 @@ bool init(int cuda_device_id) {
 
     log_reset_shots();
 
-    if (!CHECK_CU(cuDeviceGet(&dev, cuda_device_id)) ||
+    if (!CHECK_CU(cuInit(0)) ||
+        !CHECK_CU(cuDeviceGet(&dev, cuda_device_id)) ||
         !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev)) ||
         !CHECK_CU(cuDevicePrimaryCtxRetain(&aimdo_cuda_ctx, dev)) ||
         !CHECK_CU(cuCtxSetCurrent(aimdo_cuda_ctx)) ||
