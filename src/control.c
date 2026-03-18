@@ -46,6 +46,20 @@ uint64_t get_total_vram_usage() {
     return total_vram_usage;
 }
 
+static bool self_test(int cuda_device_id) {
+    const size_t test_size = 128ULL * 1024 * 1024;
+    CUdeviceptr vaddr = 0;
+    CUmemGenericAllocationHandle handle = 0;
+    bool failed = !CHECK_CU(cuMemAddressReserve(&vaddr, test_size, 0, 0, 0)) ||
+                  (vaddr && (three_stooges(vaddr, test_size, cuda_device_id, &handle) != CUDA_SUCCESS));
+
+    failed |= (handle && !CHECK_CU(cuMemUnmap(vaddr, test_size)));
+    failed |= (handle && !CHECK_CU(cuMemRelease(handle)));
+    failed |= (vaddr && !CHECK_CU(cuMemAddressFree(vaddr, test_size)));
+
+    return !failed;
+}
+
 SHARED_EXPORT
 bool init(int cuda_device_id) {
     CUdevice dev;
@@ -58,9 +72,12 @@ bool init(int cuda_device_id) {
         !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev)) ||
         !CHECK_CU(cuDevicePrimaryCtxRetain(&aimdo_cuda_ctx, dev)) ||
         !CHECK_CU(cuCtxSetCurrent(aimdo_cuda_ctx)) ||
-        !plat_init(dev)) {
+        !plat_init(dev) ||
+        !self_test(cuda_device_id)) {
         return false;
     }
+
+    total_vram_usage = 0;
 
     if (!CHECK_CU(cuDeviceGetName(dev_name, sizeof(dev_name), dev))) {
         sprintf(dev_name, "<unknown>");
