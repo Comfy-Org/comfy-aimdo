@@ -42,8 +42,9 @@ void aimdo_teardown_hooks();
 
 static inline bool aimdo_wddm_init(CUdevice dev) { return true; }
 static inline void aimdo_wddm_cleanup() {}
-static inline bool aimdo_setup_hooks() { return true; }
-static inline void aimdo_teardown_hooks() {}
+/* cuda-hook.c */
+bool aimdo_setup_hooks();
+void aimdo_teardown_hooks();
 
 static inline bool poll_budget_deficit() {
     return cuda_budget_deficit();
