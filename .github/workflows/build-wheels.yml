@@ -107,7 +107,7 @@ jobs:
             gcc -shared -fPIC -O2 -g src/*.c src-posix/*.c
             -Isrc -I/usr/local/cuda-12.1/include
             -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs 
-            -lcuda -o comfy_aimdo/aimdo.so
+            -lcuda -ldl -o comfy_aimdo/aimdo.so
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"
 
       - name: Upload wheels

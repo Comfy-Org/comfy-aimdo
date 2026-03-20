@@ -186,48 +186,9 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     return status;
 }
 
-#if !defined(_WIN32) && !defined(_WIN64)
-
-static inline void ensure_ctx(void) {
-    CUcontext ctx = NULL;
-
-    if (cuCtxGetCurrent(&ctx) != CUDA_SUCCESS || !ctx) {
-        cuCtxSetCurrent(aimdo_cuda_ctx);
-    }
-}
-
-cudaError_t cudaMalloc(void** devPtr, size_t size) {
-    if (!devPtr) {
-        return 1; /* cudaErrorInvalidValue */
-    }
-
-    ensure_ctx();
-    return aimdo_cuda_malloc((CUdeviceptr*)devPtr, size, cuMemAlloc_v2) ?
-                2 /* cudaErrorMemoryAllocation */ : 0;
-}
-
-cudaError_t cudaFree(void* devPtr) {
-    ensure_ctx();
-    return (cudaError_t)aimdo_cuda_free((CUdeviceptr)devPtr, cuMemFree_v2);
-}
-
-cudaError_t cudaMallocAsync(void** devPtr, size_t size, cudaStream_t stream) {
-    if (!devPtr) {
-        return 1; /* cudaErrorInvalidValue */
-    }
-
-    ensure_ctx();
-    return aimdo_cuda_malloc_async((CUdeviceptr*)devPtr, size,
-                                   (CUstream)stream, cuMemAllocAsync) ?
-                2 /* cudaErrorMemoryAllocation */ : 0;
-}
-
-cudaError_t cudaFreeAsync(void* devPtr, cudaStream_t stream) {
-    ensure_ctx();
-    /* CUresult and cudaError_t values are identical in CUDA 12+ for all
-     * errors cuMemFreeAsync can return (1, 3, 4, 101, 201, 801).
-     */
-    return (cudaError_t)aimdo_cuda_free_async((CUdeviceptr)devPtr, (CUstream)stream, cuMemFreeAsync);
-}
-
-#endif
+/* NOTE: Legacy POSIX runtime API symbol overrides (cudaMalloc, cudaFree,
+ * cudaMallocAsync, cudaFreeAsync) were removed. They relied on ELF symbol
+ * interposition which does not work when aimdo.so is loaded via ctypes after
+ * libcudart.so. Driver-level hooking is now handled by src-posix/cuda-hook.c
+ * via GOT patching — the POSIX equivalent of Windows Detours.
+ */
