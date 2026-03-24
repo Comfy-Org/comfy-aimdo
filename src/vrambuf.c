@@ -1,6 +1,10 @@
 #include "vrambuf.h"
 
-#define VRAM_CHUNK_SIZE      (16ULL * 1024 * 1024)
+#if defined(__HIP_PLATFORM_AMD__)
+#  define VRAM_CHUNK_SIZE      CUDA_PAGE_SIZE
+#else
+#  define VRAM_CHUNK_SIZE      (16ULL * 1024 * 1024)
+#endif
 
 SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
@@ -94,6 +98,7 @@ void vrambuf_destroy(void *arg) {
 
     if (buf->allocated > 0) {
         CHECK_CU(cuMemUnmap(buf->base_ptr, buf->allocated));
+        unmap_workaround(buf->base_ptr, buf->allocated);
     }
 
     for (i = 0; i < buf->handle_count; i++) {

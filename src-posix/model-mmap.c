@@ -1,4 +1,4 @@
-#include "plat.h"
+#include "../src/plat.h"
 
 #include <errno.h>
 #include <fcntl.h>

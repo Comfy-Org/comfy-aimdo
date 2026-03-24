@@ -93,6 +93,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     do_free = do_free && rp->handle && (do_unpin || !rp->pinned);
     if (do_free) {
         CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
+        unmap_workaround(vaddr, VBAR_PAGE_SIZE);
         CHECK_CU(cuMemRelease(rp->handle));
         total_vram_usage -= VBAR_PAGE_SIZE;
         rp->handle = 0;
