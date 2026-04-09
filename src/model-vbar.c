@@ -174,6 +174,15 @@ size_t vbars_free(size_t size) {
     return ret;
 }
 
+size_t vbars_free_dev(size_t size, int device) {
+    size_t ret;
+
+    vbar_list_lock();
+    ret = vbars_free_locked_dev(size, device);
+    vbar_list_unlock();
+    return ret;
+}
+
 static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {
     while (cursor < mv->watermark && mv->residency_map[cursor].handle) {
         cursor++;
@@ -227,8 +236,15 @@ void *vbar_allocate(uint64_t size, int device) {
     log_reset_shots();
     log(DEBUG, "%s (start): size=%zuM, device=%d\n", __func__, size / M, device);
 
+    /* Phase 1: lazy init for this device */
+    ensure_device_init(device);
+
+    /* Use per-device capacity if available, else global */
+    uint64_t cap = (device >= 0 && device < AIMDO_MAX_DEVICES && g_dev[device].inited)
+                   ? g_dev[device].vram_capacity : vram_capacity;
+
     size_t nr_pages = VBAR_GET_PAGE_NR_UP(size);
-    size_t nr_pages_max = VBAR_GET_PAGE_NR(vram_capacity);
+    size_t nr_pages_max = VBAR_GET_PAGE_NR(cap);
     if (nr_pages_max < nr_pages) {
         nr_pages = nr_pages_max;
     }
@@ -335,12 +351,10 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
     vbar_list_lock();
     vbars_dirty = true;
 
-    /* Stopgap. If the we get a bad shared memory spike, collect it here on the next layer
-     * as the allocator is unreliable as it may not actually be called reliably when you
-     * really need to know you have spilled.
+    /* Stopgap: use per-device budget to avoid phantom cross-GPU deficit.
      * Only evict pages from the same device to avoid cross-GPU thrashing.
      */
-    vbars_free_locked_dev(budget_deficit(0), mv->device);
+    vbars_free_locked_dev(budget_deficit_dev(0, mv->device), mv->device);
 
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
@@ -360,7 +374,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
 
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
-        if (budget_deficit(VBAR_PAGE_SIZE) ||
+        if (budget_deficit_dev(VBAR_PAGE_SIZE, mv->device) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");

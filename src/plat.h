@@ -111,6 +111,19 @@ void log_reset_shots();
 
 #define AIMDO_MAX_DEVICES 16
 
+/* ---- Per-device state (Phase 1) ---- */
+typedef struct {
+    bool inited;
+    uint64_t vram_capacity;
+    CUcontext ctx;
+    uint64_t usage_last_check;
+    ssize_t deficit_sync;
+    uint64_t last_check_tick;
+    const char *prevailing_method;
+} AimdoDeviceState;
+
+extern AimdoDeviceState g_dev[AIMDO_MAX_DEVICES];
+
 /* control.c */
 extern uint64_t vram_capacity;
 extern uint64_t total_vram_usage;
@@ -118,20 +131,64 @@ extern uint64_t total_vram_last_check;
 extern ssize_t deficit_sync;
 extern const char *prevailing_deficit_method;
 
-/* Per-device VRAM accounting (control.c) */
+void ensure_device_init(int device);
+
+/* Per-device VRAM accounting (control.c) — Phase 5: atomic counters */
 extern uint64_t dev_vram_usage[AIMDO_MAX_DEVICES];
 
+#if defined(_WIN32) || defined(_WIN64)
+
 static inline void dev_vram_add(int device, size_t size) {
-    total_vram_usage += size;
+    InterlockedExchangeAdd64((volatile LONG64 *)&total_vram_usage, (LONG64)size);
     if (device >= 0 && device < AIMDO_MAX_DEVICES)
-        dev_vram_usage[device] += size;
+        InterlockedExchangeAdd64((volatile LONG64 *)&dev_vram_usage[device], (LONG64)size);
 }
 
 static inline void dev_vram_sub(int device, size_t size) {
-    total_vram_usage -= size;
+    InterlockedExchangeAdd64((volatile LONG64 *)&total_vram_usage, -(LONG64)size);
     if (device >= 0 && device < AIMDO_MAX_DEVICES)
-        dev_vram_usage[device] -= size;
+        InterlockedExchangeAdd64((volatile LONG64 *)&dev_vram_usage[device], -(LONG64)size);
 }
+
+#else
+
+static inline void dev_vram_add(int device, size_t size) {
+    __atomic_add_fetch(&total_vram_usage, size, __ATOMIC_RELAXED);
+    if (device >= 0 && device < AIMDO_MAX_DEVICES)
+        __atomic_add_fetch(&dev_vram_usage[device], size, __ATOMIC_RELAXED);
+}
+
+static inline void dev_vram_sub(int device, size_t size) {
+    __atomic_sub_fetch(&total_vram_usage, size, __ATOMIC_RELAXED);
+    if (device >= 0 && device < AIMDO_MAX_DEVICES)
+        __atomic_sub_fetch(&dev_vram_usage[device], size, __ATOMIC_RELAXED);
+}
+
+#endif
+
+/* ---- Context save/restore helpers (Phase 2) ---- */
+static inline bool with_device_ctx(int device, CUcontext *prev) {
+    CUcontext cur = NULL;
+    cuCtxGetCurrent(&cur);
+    *prev = cur;
+    if (device >= 0 && device < AIMDO_MAX_DEVICES && g_dev[device].inited) {
+        CUcontext target = g_dev[device].ctx;
+        if (cur != target) {
+            cuCtxSetCurrent(target);
+        }
+        return true;
+    }
+    return (cur != NULL);
+}
+
+static inline void restore_ctx(CUcontext prev) {
+    cuCtxSetCurrent(prev);
+}
+
+/* ---- Per-device hybrid budget (Phase 3) ---- */
+
+/* Poll cuMemGetInfo for a specific device using its context */
+bool poll_budget_deficit_dev(int device);
 
 static inline size_t budget_deficit(size_t size) {
     ssize_t deficit_simple, deficit_delta;
@@ -149,22 +206,25 @@ static inline size_t budget_deficit(size_t size) {
     return deficit;
 }
 
-/* Per-device budget deficit using only that device's VRAM usage. */
+/* Per-device budget deficit with cuMemGetInfo hybrid backstop (Phase 3). */
 static inline size_t budget_deficit_dev(size_t size, int device) {
-    size_t usage;
-
-    if (device < 0 || device >= AIMDO_MAX_DEVICES)
+    if (device < 0 || device >= AIMDO_MAX_DEVICES || !g_dev[device].inited)
         return budget_deficit(size);
 
-    usage = dev_vram_usage[device];
-    ssize_t deficit = (ssize_t)(usage + VRAM_HEADROOM + size) - (ssize_t)vram_capacity;
-    if (deficit < 0)
-        deficit = 0;
+    AimdoDeviceState *s = &g_dev[device];
+    uint64_t usage = dev_vram_usage[device];
+
+    poll_budget_deficit_dev(device);
+
+    ssize_t deficit_simple = (ssize_t)(usage + VRAM_HEADROOM + size) - (ssize_t)s->vram_capacity;
+    ssize_t deficit_delta = s->deficit_sync + (ssize_t)usage - (ssize_t)s->usage_last_check + size;
+    size_t deficit = (size_t)MAX(MAX(deficit_simple, deficit_delta), (ssize_t)0);
     if (deficit) {
-        log(DEBUG, "%s: device=%d usage=%zuM deficit=%zdM size=%zuM\n", __func__,
-            device, usage / M, deficit / M, size / M);
+        log(DEBUG, "%s: dev=%d %s deficit=%zuM usage=%zuM cap=%zuM size=%zuM\n", __func__,
+            device, deficit_simple > deficit_delta ? "simple" : s->prevailing_method,
+            deficit / M, usage / M, s->vram_capacity / M, size / M);
     }
-    return (size_t)deficit;
+    return deficit;
 }
 
 static inline int check_cu_impl(CUresult res, const char *label) {
@@ -221,6 +281,7 @@ fail:
 
 /* model_vbar.c */
 size_t vbars_free(size_t size);
+size_t vbars_free_dev(size_t size, int device);
 SHARED_EXPORT
 uint64_t vbars_analyze(bool only_dirty);
 
