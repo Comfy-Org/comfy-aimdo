@@ -4,6 +4,7 @@
 uint64_t vram_capacity;
 uint64_t total_vram_usage;
 uint64_t total_vram_last_check;
+uint64_t dev_vram_usage[AIMDO_MAX_DEVICES];
 ssize_t deficit_sync;
 const char *prevailing_deficit_method;
 CUcontext aimdo_cuda_ctx;

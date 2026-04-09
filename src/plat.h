@@ -109,12 +109,29 @@ void log_reset_shots();
 /* The default VRAM headroom. Different deficit methods with BYO headroom */
 #define VRAM_HEADROOM (256 * 1024 * 1024)
 
+#define AIMDO_MAX_DEVICES 16
+
 /* control.c */
 extern uint64_t vram_capacity;
 extern uint64_t total_vram_usage;
 extern uint64_t total_vram_last_check;
 extern ssize_t deficit_sync;
 extern const char *prevailing_deficit_method;
+
+/* Per-device VRAM accounting (control.c) */
+extern uint64_t dev_vram_usage[AIMDO_MAX_DEVICES];
+
+static inline void dev_vram_add(int device, size_t size) {
+    total_vram_usage += size;
+    if (device >= 0 && device < AIMDO_MAX_DEVICES)
+        dev_vram_usage[device] += size;
+}
+
+static inline void dev_vram_sub(int device, size_t size) {
+    total_vram_usage -= size;
+    if (device >= 0 && device < AIMDO_MAX_DEVICES)
+        dev_vram_usage[device] -= size;
+}
 
 static inline size_t budget_deficit(size_t size) {
     ssize_t deficit_simple, deficit_delta;
@@ -130,6 +147,24 @@ static inline size_t budget_deficit(size_t size) {
             deficit / M, size / M);
     }
     return deficit;
+}
+
+/* Per-device budget deficit using only that device's VRAM usage. */
+static inline size_t budget_deficit_dev(size_t size, int device) {
+    size_t usage;
+
+    if (device < 0 || device >= AIMDO_MAX_DEVICES)
+        return budget_deficit(size);
+
+    usage = dev_vram_usage[device];
+    ssize_t deficit = (ssize_t)(usage + VRAM_HEADROOM + size) - (ssize_t)vram_capacity;
+    if (deficit < 0)
+        deficit = 0;
+    if (deficit) {
+        log(DEBUG, "%s: device=%d usage=%zuM deficit=%zdM size=%zuM\n", __func__,
+            device, usage / M, deficit / M, size / M);
+    }
+    return (size_t)deficit;
 }
 
 static inline int check_cu_impl(CUresult res, const char *label) {
@@ -171,7 +206,7 @@ static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
     if (!CHECK_CU(err = cuMemSetAccess(vaddr, size, &accessDesc, 1))) {
         goto fail_access;
     }
-    total_vram_usage += size;
+    dev_vram_add(device, size);
 
     *handle = h;
     return CUDA_SUCCESS;

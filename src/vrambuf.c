@@ -101,6 +101,6 @@ void vrambuf_destroy(void *arg) {
     }
 
     CHECK_CU(cuMemAddressFree(buf->base_ptr, buf->max_size));
-    total_vram_usage -= buf->allocated;
+    dev_vram_sub(buf->device, buf->allocated);
     free(buf);
 }

@@ -9,8 +9,18 @@
 typedef struct SizeEntry {
     CUdeviceptr ptr;
     size_t size;
+    int device;
     struct SizeEntry *next;
 } SizeEntry;
+
+static inline int current_cuda_device(void) {
+    CUdevice dev = 0;
+    CUcontext ctx = NULL;
+    if (cuCtxGetCurrent(&ctx) == CUDA_SUCCESS && ctx) {
+        cuCtxGetDevice(&dev);
+    }
+    return (int)dev;
+}
 
 static SizeEntry *size_table[SIZE_HASH_SIZE];
 
@@ -42,14 +52,16 @@ static inline void st_unlock(void) { pthread_mutex_unlock(&size_table_lock); }
 static inline void account_alloc(CUdeviceptr ptr, size_t size) {
     unsigned int h = size_hash(ptr);
     SizeEntry *entry;
+    int dev = current_cuda_device();
 
     st_lock();
-    total_vram_usage += CUDA_ALIGN_UP(size);
+    dev_vram_add(dev, CUDA_ALIGN_UP(size));
 
     entry = (SizeEntry *)malloc(sizeof(*entry));
     if (entry) {
         entry->ptr = ptr;
         entry->size = size;
+        entry->device = dev;
         entry->next = size_table[h];
         size_table[h] = entry;
     }
@@ -70,7 +82,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
             *prev = entry->next;
 
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", ptr, entry->size / K, hStream);
-            total_vram_usage -= CUDA_ALIGN_UP(entry->size);
+            dev_vram_sub(entry->device, CUDA_ALIGN_UP(entry->size));
 
             st_unlock();
             free(entry);
