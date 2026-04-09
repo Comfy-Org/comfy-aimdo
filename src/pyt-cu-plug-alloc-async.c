@@ -107,7 +107,12 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
     }
 
     ensure_device_init(dev);
-    vbars_free_dev(budget_deficit_dev(size + CUDA_MALLOC_HEADROOM, dev), dev);
+
+    {
+        size_t deficit = budget_deficit_dev(size + CUDA_MALLOC_HEADROOM, dev);
+        if (deficit)
+            vbars_free_dev(deficit, dev);
+    }
 
     if (CHECK_CU(true_cuMemAlloc_v2(&dptr, size))) {
         *devPtr = dptr;
@@ -160,7 +165,12 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     }
 
     ensure_device_init(dev);
-    vbars_free_dev(budget_deficit_dev(size, dev), dev);
+
+    {
+        size_t deficit = budget_deficit_dev(size, dev);
+        if (deficit)
+            vbars_free_dev(deficit, dev);
+    }
 
     if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
         *devPtr = dptr;

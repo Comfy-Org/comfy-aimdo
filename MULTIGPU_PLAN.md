@@ -116,7 +116,7 @@ Windows equivalent: `InterlockedExchangeAdd64`.
 ---
 
 ## Phase 6 (Future): Per-Device Locking
-**Status:** ⬜ Not started — only pursue if performance still >1.3× worse than no-aimdo after Phases 1–5
+**Status:** ✅ Done (partial) — moved budget_deficit_dev outside vbar_lock, removed inner per-page deficit check. Result: no measurable improvement (41.47s vs 41.29s). Lock contention is not the bottleneck — the ~4s gap to no-aimdo is inherent VMM overhead (cuMemCreate/Map/SetAccess per page).
 
 The global `vbar_lock` serializes both GPUs. `cuCtxSynchronize()` is called while holding it, blocking the other GPU's `vbar_fault`.
 

@@ -348,13 +348,17 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
 
     log(VVERBOSE, "%s (start): offset=%lldk, size=%lldk\n", __func__, (ull)(offset / K), (ull)(size / K));
 
+    /* Phase 6: compute budget outside lock to avoid blocking other GPUs
+     * during cuMemGetInfo. The deficit check is a heuristic anyway.
+     */
+    size_t pre_deficit = budget_deficit_dev(0, mv->device);
+
     vbar_list_lock();
     vbars_dirty = true;
 
-    /* Stopgap: use per-device budget to avoid phantom cross-GPU deficit.
-     * Only evict pages from the same device to avoid cross-GPU thrashing.
-     */
-    vbars_free_locked_dev(budget_deficit_dev(0, mv->device), mv->device);
+    /* Stopgap: evict using pre-computed deficit (device-filtered). */
+    if (pre_deficit)
+        vbars_free_locked_dev(pre_deficit, mv->device);
 
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
@@ -374,8 +378,11 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
 
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
-        if (budget_deficit_dev(VBAR_PAGE_SIZE, mv->device) ||
-            (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
+        /* Try allocation directly — skip inner deficit check to reduce
+         * lock hold time. The pre-deficit check + OOM retry cover safety.
+         */
+        err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle);
+        if (err != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");
                 vbar_list_unlock();
