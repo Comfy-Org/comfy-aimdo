@@ -25,6 +25,23 @@ bool cuda_budget_deficit();
 #define SHARED_EXPORT __declspec(dllexport)
 
 #include <BaseTsd.h>
+#include <intrin.h>
+
+/* MSVC C mode: the non-prefixed InterlockedXxx64 names are macros
+ * defined in <winnt.h> (via <windows.h>), but we can't include
+ * <windows.h> here because it #defines ERROR/DEBUG which clash
+ * with our DebugLevels enum.  Use the underscore-prefixed intrinsics
+ * directly and provide our own macro aliases.
+ */
+#ifndef InterlockedExchangeAdd64
+#define InterlockedExchangeAdd64 _InterlockedExchangeAdd64
+#endif
+#ifndef InterlockedOr64
+#define InterlockedOr64 _InterlockedOr64
+#endif
+#ifndef InterlockedCompareExchange
+#define InterlockedCompareExchange _InterlockedCompareExchange
+#endif
 
 typedef SSIZE_T ssize_t;
 
