@@ -138,6 +138,10 @@ extern uint64_t dev_vram_usage[AIMDO_MAX_DEVICES];
 
 #if defined(_WIN32) || defined(_WIN64)
 
+static inline uint64_t dev_vram_load(int device) {
+    return (uint64_t)InterlockedOr64((volatile LONG64 *)&dev_vram_usage[device], 0);
+}
+
 static inline void dev_vram_add(int device, size_t size) {
     InterlockedExchangeAdd64((volatile LONG64 *)&total_vram_usage, (LONG64)size);
     if (device >= 0 && device < AIMDO_MAX_DEVICES)
@@ -151,6 +155,10 @@ static inline void dev_vram_sub(int device, size_t size) {
 }
 
 #else
+
+static inline uint64_t dev_vram_load(int device) {
+    return __atomic_load_n(&dev_vram_usage[device], __ATOMIC_RELAXED);
+}
 
 static inline void dev_vram_add(int device, size_t size) {
     __atomic_add_fetch(&total_vram_usage, size, __ATOMIC_RELAXED);
@@ -212,7 +220,7 @@ static inline size_t budget_deficit_dev(size_t size, int device) {
         return budget_deficit(size);
 
     AimdoDeviceState *s = &g_dev[device];
-    uint64_t usage = dev_vram_usage[device];
+    uint64_t usage = dev_vram_load(device);
 
     poll_budget_deficit_dev(device);
 

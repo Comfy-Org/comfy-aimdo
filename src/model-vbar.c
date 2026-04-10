@@ -134,7 +134,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
  */
 static size_t vbars_free_locked_dev(size_t size, int device_filter) {
     size_t pages_needed = VBAR_GET_PAGE_NR_UP(size);
-    bool dirty = false;
+    bool synced[AIMDO_MAX_DEVICES] = {false};
 
     one_time_setup();
     vbars_dirty = true;
@@ -148,9 +148,13 @@ static size_t vbars_free_locked_dev(size_t size, int device_filter) {
         if (device_filter >= 0 && i->device != device_filter)
             continue;
         for (;pages_needed && i->watermark > i->watermark_limit; i->watermark--) {
-            if (!dirty) {
+            int dev = i->device;
+            if (dev >= 0 && dev < AIMDO_MAX_DEVICES && !synced[dev]) {
+                CUcontext prev;
+                with_device_ctx(dev, &prev);
                 CHECK_CU(cuCtxSynchronize());
-                dirty = true;
+                restore_ctx(prev);
+                synced[dev] = true;
             }
             if (mod1(i, i->watermark - 1, true, false)) {
                 pages_needed--;
@@ -161,15 +165,11 @@ static size_t vbars_free_locked_dev(size_t size, int device_filter) {
     return pages_needed;
 }
 
-static inline size_t vbars_free_locked(size_t size) {
-    return vbars_free_locked_dev(size, -1);
-}
-
 size_t vbars_free(size_t size) {
     size_t ret;
 
     vbar_list_lock();
-    ret = vbars_free_locked(size);
+    ret = vbars_free_locked_dev(size, -1);
     vbar_list_unlock();
     return ret;
 }
@@ -194,7 +194,10 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target) {
     size_t cursor = move_cursor_to_absent(mv, 0);
     int device_filter = mv->device;
 
+    CUcontext prev;
+    with_device_ctx(device_filter, &prev);
     CHECK_CU(cuCtxSynchronize());
+    restore_ctx(prev);
 
     for (ModelVBAR *i = lowest_priority.higher;
          cursor < target && cursor < mv->watermark && i != &highest_priority;
@@ -422,7 +425,10 @@ void vbar_unpin(void *vbar, uint64_t offset, uint64_t size) {
     size_t page_end = VBAR_GET_PAGE_NR_UP(offset + size);
 
     if (page_end > mv->watermark) {
+        CUcontext prev;
+        with_device_ctx(mv->device, &prev);
         CHECK_CU(cuCtxSynchronize());
+        restore_ctx(prev);
     }
 
     for (uint64_t page_nr = VBAR_GET_PAGE_NR(offset); page_nr < page_end && page_nr < mv->nr_pages; page_nr++) {
@@ -440,7 +446,12 @@ void vbar_free(void *vbar) {
     vbar_list_lock();
     vbars_dirty = true;
 
-    CHECK_CU(cuCtxSynchronize());
+    {
+        CUcontext prev;
+        with_device_ctx(mv->device, &prev);
+        CHECK_CU(cuCtxSynchronize());
+        restore_ctx(prev);
+    }
 
     for (uint64_t page_nr = 0; page_nr < mv->nr_pages; page_nr++) {
         mod1(mv, page_nr, true, true);
@@ -493,7 +504,12 @@ uint64_t vbar_free_memory(void *vbar, uint64_t size) {
     vbar_list_lock();
     vbars_dirty = true;
 
-    CHECK_CU(cuCtxSynchronize());
+    {
+        CUcontext prev;
+        with_device_ctx(mv->device, &prev);
+        CHECK_CU(cuCtxSynchronize());
+        restore_ctx(prev);
+    }
 
     for (;pages_to_free && mv->watermark > mv->watermark_limit; mv->watermark--) {
         /* In theory we should never have pins here, but

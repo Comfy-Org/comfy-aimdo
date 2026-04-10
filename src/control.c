@@ -56,13 +56,34 @@ bool poll_budget_deficit_dev(int device) {
         return false;
 
     s->last_check_tick = now;
-    s->usage_last_check = dev_vram_usage[device];
+    s->usage_last_check = dev_vram_load(device);
     s->deficit_sync = (ssize_t)VRAM_HEADROOM - (ssize_t)free_vram;
     s->prevailing_method = "cuMemGetInfo (per-dev)";
     return true;
 }
 
-/* Phase 1: lazy per-device init */
+/* Phase 1: lazy per-device init — thread-safe via init_lock */
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+static CRITICAL_SECTION dev_init_lock;
+static volatile LONG dev_init_lock_ready;
+
+static inline void dev_init_lock_acquire(void) {
+    if (!InterlockedCompareExchange(&dev_init_lock_ready, 1, 0)) {
+        InitializeCriticalSection(&dev_init_lock);
+        InterlockedExchange(&dev_init_lock_ready, 2);
+    }
+    while (dev_init_lock_ready != 2) { /* spin until init done */ }
+    EnterCriticalSection(&dev_init_lock);
+}
+static inline void dev_init_lock_release(void) { LeaveCriticalSection(&dev_init_lock); }
+#else
+#include <pthread.h>
+static pthread_mutex_t dev_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static inline void dev_init_lock_acquire(void) { pthread_mutex_lock(&dev_init_lock); }
+static inline void dev_init_lock_release(void) { pthread_mutex_unlock(&dev_init_lock); }
+#endif
+
 void ensure_device_init(int device) {
     if (device < 0 || device >= AIMDO_MAX_DEVICES)
         return;
@@ -71,22 +92,47 @@ void ensure_device_init(int device) {
     if (s->inited)
         return;
 
-    CUdevice dev;
-    if (!CHECK_CU(cuDeviceGet(&dev, device)))
+    dev_init_lock_acquire();
+
+    /* Double-check after acquiring lock */
+    if (s->inited) {
+        dev_init_lock_release();
         return;
+    }
+
+    CUdevice dev;
+    if (!CHECK_CU(cuDeviceGet(&dev, device))) {
+        dev_init_lock_release();
+        return;
+    }
 
     uint64_t cap = 0;
-    if (!CHECK_CU(cuDeviceTotalMem(&cap, dev)))
+    if (!CHECK_CU(cuDeviceTotalMem(&cap, dev))) {
+        dev_init_lock_release();
         return;
+    }
 
     CUcontext ctx = NULL;
-    if (!CHECK_CU(cuDevicePrimaryCtxRetain(&ctx, dev)))
+    if (!CHECK_CU(cuDevicePrimaryCtxRetain(&ctx, dev))) {
+        dev_init_lock_release();
         return;
+    }
 
     s->vram_capacity = cap;
     s->ctx = ctx;
     s->prevailing_method = "none";
+
+    /* Write inited last with a store barrier so other threads see
+     * fully initialized fields before they see inited == true.
+     */
+#if defined(_WIN32) || defined(_WIN64)
+    MemoryBarrier();
     s->inited = true;
+#else
+    __atomic_store_n(&s->inited, true, __ATOMIC_RELEASE);
+#endif
+
+    dev_init_lock_release();
 
     char dev_name[256];
     if (!CHECK_CU(cuDeviceGetName(dev_name, sizeof(dev_name), dev)))
