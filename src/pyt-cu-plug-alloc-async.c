@@ -9,8 +9,18 @@
 typedef struct SizeEntry {
     CUdeviceptr ptr;
     size_t size;
+    int device;
     struct SizeEntry *next;
 } SizeEntry;
+
+static inline int current_cuda_device(void) {
+    CUdevice dev = 0;
+    CUcontext ctx = NULL;
+    if (cuCtxGetCurrent(&ctx) == CUDA_SUCCESS && ctx) {
+        cuCtxGetDevice(&dev);
+    }
+    return (int)dev;
+}
 
 static SizeEntry *size_table[SIZE_HASH_SIZE];
 
@@ -42,14 +52,16 @@ static inline void st_unlock(void) { pthread_mutex_unlock(&size_table_lock); }
 static inline void account_alloc(CUdeviceptr ptr, size_t size) {
     unsigned int h = size_hash(ptr);
     SizeEntry *entry;
+    int dev = current_cuda_device();
 
     st_lock();
-    total_vram_usage += CUDA_ALIGN_UP(size);
+    dev_vram_add(dev, CUDA_ALIGN_UP(size));
 
     entry = (SizeEntry *)malloc(sizeof(*entry));
     if (entry) {
         entry->ptr = ptr;
         entry->size = size;
+        entry->device = dev;
         entry->next = size_table[h];
         size_table[h] = entry;
     }
@@ -70,7 +82,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
             *prev = entry->next;
 
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", ptr, entry->size / K, hStream);
-            total_vram_usage -= CUDA_ALIGN_UP(entry->size);
+            dev_vram_sub(entry->device, CUDA_ALIGN_UP(entry->size));
 
             st_unlock();
             free(entry);
@@ -88,12 +100,14 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
                       CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
     CUdeviceptr dptr;
     CUresult status = 0;
+    int dev = current_cuda_device();
 
     if (!devPtr || !true_cuMemAlloc_v2) {
         return 1;
     }
 
-    vbars_free(budget_deficit(size + CUDA_MALLOC_HEADROOM));
+    ensure_device_init(dev);
+    vbars_free_dev(budget_deficit_dev(size + CUDA_MALLOC_HEADROOM, dev), dev);
 
     if (CHECK_CU(true_cuMemAlloc_v2(&dptr, size))) {
         *devPtr = dptr;
@@ -101,7 +115,7 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
         return 0;
     }
 
-    vbars_free(size + CUDA_MALLOC_HEADROOM);
+    vbars_free_dev(size + CUDA_MALLOC_HEADROOM, dev);
     status = true_cuMemAlloc_v2(&dptr, size);
     if (CHECK_CU(status)) {
         *devPtr = dptr;
@@ -137,20 +151,22 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
                             CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
     CUdeviceptr dptr;
     CUresult status = 0;
+    int dev = current_cuda_device();
 
-    log(VVERBOSE, "%s (start) size=%zuk stream=%p\n", __func__, size / K, hStream);
+    log(VVERBOSE, "%s (start) size=%zuk stream=%p dev=%d\n", __func__, size / K, hStream, dev);
 
     if (!devPtr) {
         return 1;
     }
 
-    vbars_free(budget_deficit(size));
+    ensure_device_init(dev);
+    vbars_free_dev(budget_deficit_dev(size, dev), dev);
 
     if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
         *devPtr = dptr;
         goto success;
     }
-    vbars_free(size);
+    vbars_free_dev(size, dev);
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
         *devPtr = dptr;
@@ -192,7 +208,14 @@ static inline void ensure_ctx(void) {
     CUcontext ctx = NULL;
 
     if (cuCtxGetCurrent(&ctx) != CUDA_SUCCESS || !ctx) {
-        cuCtxSetCurrent(aimdo_cuda_ctx);
+        /* No context set — try per-device init for device 0, then use its ctx */
+        int dev = 0;
+        ensure_device_init(dev);
+        if (g_dev[dev].inited) {
+            cuCtxSetCurrent(g_dev[dev].ctx);
+        } else {
+            cuCtxSetCurrent(aimdo_cuda_ctx);
+        }
     }
 }
 

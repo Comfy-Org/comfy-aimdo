@@ -5,6 +5,7 @@ SRCS="src/*.c src-posix/*.c"
 docker build -t manylinux-cuda -f docker/cuda-on-manylinux.Dockerfile .
 docker run --rm -v $(pwd):/project -w /project manylinux-cuda \
     gcc -shared -o comfy_aimdo/aimdo.so -fPIC -Werror \
+    -Isrc \
     -I/usr/local/cuda/include \
     -L/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs/  \
     ${SRCS} -lcuda
