@@ -39,12 +39,24 @@ static inline void st_lock(void) { pthread_mutex_lock(&size_table_lock); }
 static inline void st_unlock(void) { pthread_mutex_unlock(&size_table_lock); }
 #endif
 
+static inline size_t accounted_alloc_size(size_t size) {
+    size_t rounded = size;
+
+    if (rounded <= K) {
+        return K;
+    }
+    if (rounded > CUDA_PAGE_SIZE / 2) {
+        return CUDA_ALIGN_UP(rounded);
+    }
+
+    return rounded;
+}
 static inline void account_alloc(CUdeviceptr ptr, size_t size) {
     unsigned int h = size_hash(ptr);
     SizeEntry *entry;
 
     st_lock();
-    total_vram_usage += CUDA_ALIGN_UP(size);
+    total_vram_usage += accounted_alloc_size(size);
 
     entry = (SizeEntry *)malloc(sizeof(*entry));
     if (entry) {
@@ -70,7 +82,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
             *prev = entry->next;
 
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", ptr, entry->size / K, hStream);
-            total_vram_usage -= CUDA_ALIGN_UP(entry->size);
+            total_vram_usage -= accounted_alloc_size(entry->size);
 
             st_unlock();
             free(entry);
