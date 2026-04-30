@@ -28,6 +28,7 @@ static const DispatchSymbol dispatch_symbols[] = {
     { (void **)&g_cuda.p_cuCtxGetDevice, "cuCtxGetDevice", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuCtxSynchronize, "cuCtxSynchronize", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuDeviceGet, "cuDeviceGet", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
+    { (void **)&g_cuda.p_cuDeviceGetAttribute, "cuDeviceGetAttribute", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuDeviceTotalMem, "cuDeviceTotalMem", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuDeviceGetName, "cuDeviceGetName", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemGetInfo, "cuMemGetInfo", CU_GET_PROC_ADDRESS_LEGACY_STREAM },

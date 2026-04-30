@@ -12,6 +12,8 @@ typedef CUresult (CUDAAPI *PFN_cuGetErrorString)(CUresult error, const char **pS
 typedef CUresult (CUDAAPI *PFN_cuCtxGetDevice)(CUdevice *device);
 typedef CUresult (CUDAAPI *PFN_cuCtxSynchronize)(void);
 typedef CUresult (CUDAAPI *PFN_cuDeviceGet)(CUdevice *device, int ordinal);
+typedef CUresult (CUDAAPI *PFN_cuDeviceGetAttribute)(int *pi, CUdevice_attribute attrib,
+                                                     CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuDeviceTotalMem)(size_t *bytes, CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuDeviceGetName)(char *name, int len, CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuMemGetInfo)(size_t *free_bytes, size_t *total_bytes);
@@ -46,6 +48,7 @@ typedef struct AimdoCudaDispatch {
     PFN_cuCtxGetDevice p_cuCtxGetDevice;
     PFN_cuCtxSynchronize p_cuCtxSynchronize;
     PFN_cuDeviceGet p_cuDeviceGet;
+    PFN_cuDeviceGetAttribute p_cuDeviceGetAttribute;
     PFN_cuDeviceTotalMem p_cuDeviceTotalMem;
     PFN_cuDeviceGetName p_cuDeviceGetName;
     PFN_cuMemGetInfo p_cuMemGetInfo;
