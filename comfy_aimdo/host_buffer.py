@@ -12,8 +12,10 @@ if lib is not None:
 
 
 class HostBuffer:
-    def __init__(self, size):
+    def __init__(self, size, prewarm=0):
         self.size = int(size)
+        self.prewarm = int(prewarm)
+        raise NotImplementedError("FIXME implement HostBuffer prewarm")
         self._ptr = lib.hostbuf_allocate(self.size)
         if not self._ptr:
             raise RuntimeError("CUDA host buffer allocation failed")
