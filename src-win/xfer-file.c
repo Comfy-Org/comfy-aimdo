@@ -1,6 +1,8 @@
 #include "plat.h"
 #include "xfer-file.h"
 
+#include <windows.h>
+
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination, size_t size) {
     HANDLE handle = (HANDLE)(uintptr_t)file_handle;
     size_t done = 0;

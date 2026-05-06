@@ -69,6 +69,7 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
         }
         mutex_unlock(task.wait->mutex);
     }
+    return 0;
 }
 
 bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination, size_t size) {
@@ -151,5 +152,4 @@ void xfer_file_cleanup(void) {
     mutex_destroy(g_xfer_file_reader.mutex);
     memset(&g_xfer_file_reader, 0, sizeof(g_xfer_file_reader));
 }
-
 
