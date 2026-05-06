@@ -17,7 +17,7 @@ if lib is not None:
     lib.hostbuf_get_raw_address.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
     lib.hostbuf_get_raw_address.restype = ctypes.c_void_p
 
-    lib.hostbuf_extend.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.hostbuf_extend.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_bool, ctypes.POINTER(ctypes.c_int64)]
     lib.hostbuf_extend.restype = ctypes.c_void_p
 
     lib.hostbuf_read_file_slice.argtypes = [
@@ -56,12 +56,13 @@ class HostBuffer:
         ptr = lib.hostbuf_get_raw_address(self._ptr, 0, 0)
         return int(ptr) if ptr else 0
 
-    def extend(self, size):
+    def extend(self, size, reallocate=False):
         size = int(size)
-        ptr = lib.hostbuf_extend(self._ptr, size)
+        size_delta = ctypes.c_int64(0)
+        ptr = lib.hostbuf_extend(self._ptr, size, bool(reallocate), ctypes.byref(size_delta))
+        self.size += size_delta.value
         if not ptr and size:
             raise RuntimeError("HostBuffer.extend failed")
-        self.size += size
         return int(ptr) if ptr else 0
 
     def read_file_slice(self, file_obj, file_offset, size, offset=0):

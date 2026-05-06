@@ -10,6 +10,7 @@ typedef struct HostBuffer {
     uint64_t size;
     uint64_t committed_size;
     uint64_t reserved_size;
+    uint64_t last_chunk_size;
     uint64_t prewarm;
 } HostBuffer;
 
@@ -137,17 +138,32 @@ void *hostbuf_get_raw_address(void *hostbuf_ptr, uint64_t size, uint64_t offset)
 }
 
 SHARED_EXPORT
-void *hostbuf_extend(void *hostbuf_ptr, uint64_t size) {
+void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate, int64_t *size_delta) {
     HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+    uint64_t old_size;
     uint64_t offset;
 
-    if (!hostbuf || size > UINT64_MAX - hostbuf->size) {
+    if (!hostbuf) {
         return NULL;
     }
+    old_size = hostbuf->size;
+    *size_delta = 0;
+
+    if (reallocate && hostbuf->last_chunk_size) {
+        offset = hostbuf->size - hostbuf->last_chunk_size;
+        if (!CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + offset))) {
+            return NULL;
+        }
+        hostbuf->size = offset;
+    }
+
     offset = hostbuf->size;
     if (!hostbuf_grow(hostbuf, offset + size)) {
+        *size_delta = (int64_t)(hostbuf->size - old_size);
         return NULL;
     }
+    hostbuf->last_chunk_size = hostbuf->size - offset;
+    *size_delta = (int64_t)(hostbuf->size - old_size);
     return (char *)hostbuf->base_address + offset;
 }
 
