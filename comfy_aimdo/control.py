@@ -17,7 +17,6 @@ def detect_vendor():
             if ver_file.is_file():
                 spec = importlib.util.spec_from_file_location("torch_version_import", ver_file)
                 module = importlib.util.module_from_spec(spec)
-                importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 if module.cuda != None:
                     return "cuda"
