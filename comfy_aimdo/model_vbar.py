@@ -119,8 +119,10 @@ class ModelVBAR:
         return list(buf)
 
     def __del__(self):
-        if control.lib is not None and hasattr(self, '_ptr') and self._ptr:
-            lib.vbar_free(self._devctx, self._ptr)
+        ptr = getattr(self, "_ptr", None)
+        aimdo_lib = getattr(control, "lib", None)
+        if aimdo_lib is not None and ptr:
+            aimdo_lib.vbar_free(self._devctx, ptr)
             self._ptr = None
 
 def vbar_fault(alloc):

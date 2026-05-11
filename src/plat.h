@@ -74,6 +74,7 @@ void *aimdo_find_loaded_module(const char *const *libraries, size_t library_coun
 #define cuCtxGetDevice              g_cuda.p_cuCtxGetDevice
 #define cuCtxSynchronize            g_cuda.p_cuCtxSynchronize
 #define cuDeviceGet                 g_cuda.p_cuDeviceGet
+#define cuDeviceGetAttribute        g_cuda.p_cuDeviceGetAttribute
 #define cuDeviceTotalMem            g_cuda.p_cuDeviceTotalMem
 #define cuDeviceGetName             g_cuda.p_cuDeviceGetName
 #define cuMemGetInfo                g_cuda.p_cuMemGetInfo

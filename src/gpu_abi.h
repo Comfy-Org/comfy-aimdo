@@ -26,6 +26,10 @@ typedef struct CUctx_st *CUcontext;
 typedef struct CUstream_st *CUstream;
 typedef unsigned long long CUmemGenericAllocationHandle;
 
+typedef enum CUdevice_attribute_enum {
+    CU_DEVICE_ATTRIBUTE_INTEGRATED = 18,
+} CUdevice_attribute;
+
 typedef enum cudaError_enum {
     CUDA_SUCCESS = 0,
     CUDA_ERROR_OUT_OF_MEMORY = 2,
