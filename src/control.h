@@ -21,6 +21,7 @@ typedef struct AimdoContext {
     int _device_id;
 
     uint64_t _vram_capacity;
+    uint64_t _integrated_ram_headroom;
     uint64_t _total_vram_usage;
     uint64_t _total_vram_last_check;
     ssize_t _deficit_sync;
@@ -28,6 +29,7 @@ typedef struct AimdoContext {
     void *_highest_priority; /* ModelVBAR * */
     void *_lowest_priority; /* ModelVBAR * */
     bool _vbars_dirty;
+    bool _integrated_device;
     VramBuffer *_vmm_table[VMM_HASH_SIZE];
     SizeEntry *_size_table[SIZE_HASH_SIZE];
     void *_size_table_lock;
@@ -47,12 +49,14 @@ bool set_devctx_for_device(int device_id);
 bool set_devctx_for_current_cuda_device(void);
 
 #define vram_capacity               (g_devctx->_vram_capacity)
+#define integrated_ram_headroom     (g_devctx->_integrated_ram_headroom)
 #define total_vram_usage            (g_devctx->_total_vram_usage)
 #define total_vram_last_check       (g_devctx->_total_vram_last_check)
 #define deficit_sync                (g_devctx->_deficit_sync)
 #define highest_priority_p          (*(ModelVBAR **)&g_devctx->_highest_priority)
 #define lowest_priority_p           (*(ModelVBAR **)&g_devctx->_lowest_priority)
 #define vbars_dirty                 (g_devctx->_vbars_dirty)
+#define integrated_device           (g_devctx->_integrated_device)
 #define vmm_table                   (g_devctx->_vmm_table)
 #define size_table                  (g_devctx->_size_table)
 #define size_table_lock             (g_devctx->_size_table_lock)

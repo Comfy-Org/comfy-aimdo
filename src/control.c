@@ -1,6 +1,54 @@
 #include "plat.h"
 #include "aimdo-time.h"
 
+#if !defined(_WIN32) && !defined(_WIN64) && !defined(__HIP_PLATFORM_AMD__)
+#define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)
+#define INTEGRATED_RAM_HEADROOM_MAX (8ULL * G)
+#define INTEGRATED_SIMPLE_ONLY_DEFICIT (-(ssize_t)(1ULL << 60))
+
+static size_t calculate_integrated_ram_headroom(size_t total_bytes) {
+    size_t headroom = total_bytes / 16;
+
+    if (headroom < INTEGRATED_RAM_HEADROOM_MIN) {
+        return INTEGRATED_RAM_HEADROOM_MIN;
+    }
+    if (headroom > INTEGRATED_RAM_HEADROOM_MAX) {
+        return INTEGRATED_RAM_HEADROOM_MAX;
+    }
+
+    return headroom;
+}
+
+static bool is_integrated_cuda_device(CUdevice dev) {
+    int integrated = 0;
+
+    return CHECK_CU(cuDeviceGetAttribute(&integrated, CU_DEVICE_ATTRIBUTE_INTEGRATED, dev)) &&
+           integrated;
+}
+
+static bool read_mem_available_bytes(size_t *mem_available_bytes) {
+    char line[256];
+    FILE *handle;
+
+    if (!mem_available_bytes || !(handle = fopen("/proc/meminfo", "r"))) {
+        return false;
+    }
+
+    while (fgets(line, sizeof(line), handle)) {
+        unsigned long long mem_available_kib;
+
+        if (sscanf(line, "MemAvailable: %llu kB", &mem_available_kib) == 1) {
+            fclose(handle);
+            *mem_available_bytes = (size_t)(mem_available_kib * K);
+            return true;
+        }
+    }
+
+    fclose(handle);
+    return false;
+}
+#endif
+
 _Thread_local AimdoContext *g_devctx;
 
 static AimdoContext *g_all_devctxs;
@@ -69,6 +117,27 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
     }
     control_timestamp_last_check = now;
     total_vram_last_check = total_vram_usage;
+
+#if !defined(_WIN32) && !defined(_WIN64) && !defined(__HIP_PLATFORM_AMD__)
+    if (integrated_device) {
+        size_t mem_available = 0;
+
+        if (!read_mem_available_bytes(&mem_available)) {
+            deficit_sync = INTEGRATED_SIMPLE_ONLY_DEFICIT;
+            return false;
+        }
+
+        deficit_sync = (ssize_t)integrated_ram_headroom - (ssize_t)mem_available;
+        *prevailing_deficit_method = "/proc/meminfo (integrated RAM)";
+        log(DEBUG,
+            "%s: MemAvailable poll available=%zu MB headroom=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
+            __func__, mem_available / M, integrated_ram_headroom / M,
+            deficit_sync / (ssize_t)M, total_vram_usage / M);
+        log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
+        return true;
+    }
+#endif
+
     if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
         return false;
     }
@@ -143,6 +212,15 @@ bool init(const int *cuda_device_ids, size_t num_devices) {
             !aimdo_wddm_init(dev)) {
             goto fail;
         }
+
+#if !defined(_WIN32) && !defined(_WIN64) && !defined(__HIP_PLATFORM_AMD__)
+        devctx->_integrated_device = is_integrated_cuda_device(dev);
+        if (devctx->_integrated_device) {
+            devctx->_integrated_ram_headroom = calculate_integrated_ram_headroom(vram_capacity);
+            log(INFO, "comfy-aimdo integrated Linux GPU RAM headroom: %zu MB\n",
+                integrated_ram_headroom / M);
+        }
+#endif
 
         if (!CHECK_CU(cuDeviceGetName(dev_name, sizeof(dev_name), dev))) {
             sprintf(dev_name, "<unknown>");
