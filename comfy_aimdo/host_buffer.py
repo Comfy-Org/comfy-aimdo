@@ -29,7 +29,13 @@ if lib is not None:
     ]
     lib.hostbuf_read_file_slice.restype = ctypes.c_bool
 
-    lib.hostbuf_truncate.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.hostbuf_register.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
+    lib.hostbuf_register.restype = ctypes.c_bool
+
+    lib.hostbuf_unregister.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.hostbuf_unregister.restype = ctypes.c_bool
+
+    lib.hostbuf_truncate.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_bool]
     lib.hostbuf_truncate.restype = ctypes.c_bool
 
 
@@ -71,8 +77,16 @@ class HostBuffer:
             raise RuntimeError("HostBuffer.read_file_slice failed")
         self.size = max(self.size, int(offset) + int(size))
 
-    def truncate(self, size):
-        if not lib.hostbuf_truncate(self._ptr, int(size)):
+    def register(self, offset, size):
+        if not lib.hostbuf_register(self._ptr, int(offset), int(size)):
+            raise RuntimeError("HostBuffer.register failed")
+
+    def unregister(self, offset):
+        if not lib.hostbuf_unregister(self._ptr, int(offset)):
+            raise RuntimeError("HostBuffer.unregister failed")
+
+    def truncate(self, size, do_unregister=True):
+        if not lib.hostbuf_truncate(self._ptr, int(size), bool(do_unregister)):
             raise RuntimeError("HostBuffer.truncate failed")
         self.size = int(size)
 

@@ -85,7 +85,7 @@ fail_decommit:
     return false;
 }
 
-static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size) {
+static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size, bool do_unregister) {
     size_t page_size = hostbuf_page_size();
     uint64_t old_committed = hostbuf->committed_size;
     uint64_t new_committed = ALIGN_UP(size, page_size);
@@ -95,7 +95,7 @@ static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size) {
         (ull)hostbuf->size, (ull)old_committed, (ull)new_committed);
     if (size >= hostbuf->size ||
         !hostbuf_prewarm_start(NULL, 0) ||
-        !CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + size)) ||
+        (do_unregister && !CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + size))) ||
         (new_committed < old_committed &&
         !hostbuf_decommit_address_space((char *)hostbuf->base_address + new_committed,
                                         (size_t)(old_committed - new_committed)))) {
@@ -142,7 +142,7 @@ void hostbuf_free(void *hostbuf_ptr) {
     log(VERBOSE, "%s: hostbuf=%p base=%p size=%llu committed=%llu reserved=%llu\n", __func__,
         (void *)hostbuf, hostbuf->base_address, (ull)hostbuf->size,
         (ull)hostbuf->committed_size, (ull)hostbuf->reserved_size);
-    hostbuf_truncate_impl(hostbuf, 0);
+    hostbuf_truncate_impl(hostbuf, 0, true);
     free(hostbuf);
 }
 
@@ -202,12 +202,37 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, uint64_t file_handle, uint64_t f
 }
 
 SHARED_EXPORT
-bool hostbuf_truncate(void *hostbuf_ptr, uint64_t size) {
+bool hostbuf_register(void *hostbuf_ptr, uint64_t offset, uint64_t size) {
+    HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+
+    if (!hostbuf || offset + size > hostbuf->size) {
+        return false;
+    }
+    log(VERBOSE, "%s: hostbuf=%p offset=%llu size=%llu\n",
+        __func__, (void *)hostbuf, (ull)offset, (ull)size);
+    return size == 0 || CHECK_CU(cuMemHostRegister((char *)hostbuf->base_address + offset,
+                                                   (size_t)size, 0));
+}
+
+SHARED_EXPORT
+bool hostbuf_unregister(void *hostbuf_ptr, uint64_t offset) {
+    HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+
+    if (!hostbuf || offset >= hostbuf->size) {
+        return false;
+    }
+    log(VERBOSE, "%s: hostbuf=%p offset=%llu\n", __func__, (void *)hostbuf, (ull)offset);
+    return CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + offset));
+}
+
+SHARED_EXPORT
+bool hostbuf_truncate(void *hostbuf_ptr, uint64_t size, bool do_unregister) {
     HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
 
     if (!hostbuf) {
         return false;
     }
-    log(VERBOSE, "%s: hostbuf=%p size=%llu\n", __func__, (void *)hostbuf, (ull)size);
-    return hostbuf_truncate_impl(hostbuf, size);
+    log(VERBOSE, "%s: hostbuf=%p size=%llu do_unregister=%d\n",
+        __func__, (void *)hostbuf, (ull)size, do_unregister);
+    return hostbuf_truncate_impl(hostbuf, size, do_unregister);
 }
