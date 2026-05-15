@@ -89,6 +89,7 @@ void *aimdo_find_loaded_module(const char *const *libraries, size_t library_coun
 #define cuMemSetAccess              g_cuda.p_cuMemSetAccess
 #define cuMemUnmap                  g_cuda.p_cuMemUnmap
 #define cuMemRelease                g_cuda.p_cuMemRelease
+#define cuMemcpyHtoDAsync           g_cuda.p_cuMemcpyHtoDAsync
 #define cuDeviceGetLuid             g_cuda.p_cuDeviceGetLuid
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))

@@ -13,7 +13,7 @@ typedef struct {
     Mutex mutex;
     CondVar work_cond;
     CondVar done_cond;
-    const volatile uint8_t *ptr;
+    volatile uint8_t *ptr;
     uint64_t generation;
     size_t remaining;
     size_t page_count;
@@ -27,7 +27,7 @@ static PrewarmWorker g_workers[HOSTBUF_PREWARM_THREADS];
 
 static THREAD_FUNC hostbuf_prewarm_worker(void *arg) {
     PrewarmWorker *worker = (PrewarmWorker *)arg;
-    const volatile uint8_t *ptr;
+    volatile uint8_t *ptr;
     size_t page_end;
     size_t page_start;
     uint64_t generation = 0;
@@ -44,7 +44,7 @@ static THREAD_FUNC hostbuf_prewarm_worker(void *arg) {
         page_start = worker->index * g_prewarm_pool.page_span;
         page_end = MIN(page_start + g_prewarm_pool.page_span, g_prewarm_pool.page_count);
         for (size_t i = page_start; i < page_end; i++) {
-            (void)ptr[i * g_prewarm_pool.page_size];
+            ptr[i * g_prewarm_pool.page_size] = 0;
         }
 
         mutex_lock(g_prewarm_pool.mutex);
@@ -72,8 +72,25 @@ static bool hostbuf_prewarm_pool_init(void) {
     return true;
 }
 
-bool hostbuf_prewarm_start(const void *ptr, size_t size) {
+bool hostbuf_prewarm_join(void) {
+    if (!g_prewarm_pool.mutex) {
+        return true;
+    }
+
+    mutex_lock(g_prewarm_pool.mutex);
+    while (g_prewarm_pool.remaining) {
+        condvar_wait(g_prewarm_pool.done_cond, g_prewarm_pool.mutex);
+    }
+    mutex_unlock(g_prewarm_pool.mutex);
+    return true;
+}
+
+bool hostbuf_prewarm_start(void *ptr, size_t size) {
     size_t page_size = hostbuf_page_size();
+
+    if (!size) {
+        return hostbuf_prewarm_join();
+    }
 
     if (!g_prewarm_pool.mutex && !hostbuf_prewarm_pool_init()) {
         return false;

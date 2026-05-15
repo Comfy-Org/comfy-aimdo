@@ -41,6 +41,8 @@ typedef CUresult (CUDAAPI *PFN_cuMemSetAccess)(CUdeviceptr ptr, size_t size,
                                                const CUmemAccessDesc *desc, size_t count);
 typedef CUresult (CUDAAPI *PFN_cuMemUnmap)(CUdeviceptr ptr, size_t size);
 typedef CUresult (CUDAAPI *PFN_cuMemRelease)(CUmemGenericAllocationHandle handle);
+typedef CUresult (CUDAAPI *PFN_cuMemcpyHtoDAsync)(CUdeviceptr dst, const void *src,
+                                                  size_t bytes, CUstream hStream);
 typedef CUresult (CUDAAPI *PFN_cuDeviceGetLuid)(char *luid, unsigned int *deviceNodeMask,
                                                 CUdevice dev);
 
@@ -72,6 +74,7 @@ typedef struct AimdoCudaDispatch {
     PFN_cuMemSetAccess p_cuMemSetAccess;
     PFN_cuMemUnmap p_cuMemUnmap;
     PFN_cuMemRelease p_cuMemRelease;
+    PFN_cuMemcpyHtoDAsync p_cuMemcpyHtoDAsync;
     PFN_cuDeviceGetLuid p_cuDeviceGetLuid;
 } AimdoCudaDispatch;
 

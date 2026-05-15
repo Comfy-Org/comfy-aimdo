@@ -26,6 +26,8 @@ if lib is not None:
         ctypes.c_uint64,  # file_offset
         ctypes.c_uint64,  # size
         ctypes.c_uint64,  # offset
+        ctypes.c_void_p,  # cuda stream (NULL = blocking host-only)
+        ctypes.c_uint64,  # device dest ptr (0 = blocking host-only)
     ]
     lib.hostbuf_read_file_slice.restype = ctypes.c_bool
 
@@ -71,9 +73,10 @@ class HostBuffer:
             raise RuntimeError("HostBuffer.extend failed")
         return int(ptr) if ptr else 0
 
-    def read_file_slice(self, file_obj, file_offset, size, offset=0):
+    def read_file_slice(self, file_obj, file_offset, size, offset=0, stream=0, device_ptr=0):
         if not lib.hostbuf_read_file_slice(self._ptr, _file_handle(file_obj),
-                                           int(file_offset), int(size), int(offset)):
+                                           int(file_offset), int(size), int(offset),
+                                           int(stream) or None, int(device_ptr)):
             raise RuntimeError("HostBuffer.read_file_slice failed")
         self.size = max(self.size, int(offset) + int(size))
 
