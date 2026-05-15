@@ -203,12 +203,38 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate, int64_t 
     return (char *)hostbuf->base_address + offset;
 }
 
+/* Stream a file slice through the hostbuf into device memory in 64 MiB windows.
+ * Each window is filled by the xfer_file_read worker pool, then handed to the
+ * device via cuMemcpyHtoDAsync so the next window's read overlaps the prior
+ * window's H2D copy (the natural 2-slot pipeline depth).
+ */
+#define HOSTBUF_STREAM_WINDOW (64ULL * 1024ULL * 1024ULL)
+
 SHARED_EXPORT
 bool hostbuf_read_file_slice(void *hostbuf_ptr, uint64_t file_handle, uint64_t file_offset,
-                             uint64_t size, uint64_t offset) {
-    void *ptr = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
+                             uint64_t size, uint64_t offset,
+                             cudaStream_t stream, uint64_t device_ptr) {
+    char *host = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
 
-    return size == 0 || (ptr && xfer_file_read(file_handle, file_offset, ptr, (size_t)size));
+    if (size == 0) {
+        return true;
+    }
+    if (!host) {
+        return false;
+    }
+    if (!stream || !device_ptr) {
+        return xfer_file_read(file_handle, file_offset, host, (size_t)size);
+    }
+    for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
+        size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
+
+        if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk) ||
+            !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)(device_ptr + done), host + done,
+                                        chunk, (CUstream)stream))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 SHARED_EXPORT
