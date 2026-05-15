@@ -2,8 +2,8 @@
 #include "thread-plat.h"
 #include "xfer-file.h"
 
-#define XFER_FILE_THREADS 6
-#define XFER_FILE_CHUNK_SIZE (4U * M)
+#define XFER_FILE_THREADS 8
+#define XFER_FILE_CHUNK_SIZE (2U * M)
 #define XFER_FILE_QUEUE_CAP 256
 
 typedef struct XferFileWait {
