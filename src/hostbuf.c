@@ -216,9 +216,6 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
                              cudaStream_t stream, uint64_t device_ptr) {
     char *host;
 
-    if (!set_devctx_for_device(device)) {
-        return false;
-    }
     host = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
     if (size == 0) {
         return true;
@@ -228,6 +225,9 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     }
     if (!stream || !device_ptr) {
         return xfer_file_read(file_handle, file_offset, host, (size_t)size);
+    }
+    if (device < 0 || !set_devctx_for_device(device)) {
+        return false;
     }
     for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);

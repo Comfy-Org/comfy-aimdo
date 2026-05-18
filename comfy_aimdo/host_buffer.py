@@ -75,8 +75,9 @@ class HostBuffer:
             raise RuntimeError("HostBuffer.extend failed")
         return int(ptr) if ptr else 0
 
-    def read_file_slice(self, device, file_obj, file_offset, size, offset=0, stream=0, device_ptr=0):
-        if not lib.hostbuf_read_file_slice(self._ptr, int(device), _file_handle(file_obj),
+    def read_file_slice(self, file_obj, file_offset, size, offset=0, stream=0, device_ptr=0, device=-1):
+        device = -1 if device is None else int(device)
+        if not lib.hostbuf_read_file_slice(self._ptr, device, _file_handle(file_obj),
                                            int(file_offset), int(size), int(offset),
                                            int(stream) or None, int(device_ptr)):
             raise RuntimeError("HostBuffer.read_file_slice failed")
