@@ -211,11 +211,16 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate, int64_t 
 #define HOSTBUF_STREAM_WINDOW (64ULL * 1024ULL * 1024ULL)
 
 SHARED_EXPORT
-bool hostbuf_read_file_slice(void *hostbuf_ptr, uint64_t file_handle, uint64_t file_offset,
+bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
+                             uint64_t file_handle, uint64_t file_offset,
                              uint64_t size, uint64_t offset,
                              cudaStream_t stream, uint64_t device_ptr) {
-    char *host = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
+    char *host;
 
+    if (!set_devctx_for_device(device)) {
+        return false;
+    }
+    host = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
     if (size == 0) {
         return true;
     }
