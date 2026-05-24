@@ -3,10 +3,12 @@
 
 #include <windows.h>
 
-bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination, size_t size) {
+bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
+                       size_t size, bool mark_cold) {
     HANDLE handle = (HANDLE)(uintptr_t)file_handle;
     size_t done = 0;
 
+    (void)mark_cold;
     while (done < size) {
         DWORD got = 0;
         HANDLE event = CreateEventW(NULL, TRUE, FALSE, NULL);

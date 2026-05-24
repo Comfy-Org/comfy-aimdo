@@ -10,6 +10,7 @@ typedef struct HostBuffer {
     uint64_t reserved_size;
     uint64_t last_chunk_size;
     uint64_t prewarm;
+    bool mark_cold;
 } HostBuffer;
 
 static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size) {
@@ -127,16 +128,17 @@ static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size, bool do_un
 }
 
 SHARED_EXPORT
-void *hostbuf_allocate(uint64_t prewarm, uint64_t reserved_size) {
+void *hostbuf_allocate(uint64_t prewarm, uint64_t reserved_size, bool mark_cold) {
     HostBuffer *hostbuf = calloc(1, sizeof(*hostbuf));
 
     if (!hostbuf) {
         return NULL;
     }
     hostbuf->prewarm = prewarm;
+    hostbuf->mark_cold = mark_cold;
     hostbuf->reserved_size = ALIGN_UP(reserved_size + prewarm, hostbuf_reserve_granularity());
-    log(VERBOSE, "%s: hostbuf=%p prewarm=%llu reserved_size=%llu\n",
-        __func__, (void *)hostbuf, (ull)prewarm, (ull)hostbuf->reserved_size);
+    log(VERBOSE, "%s: hostbuf=%p prewarm=%llu reserved_size=%llu mark_cold=%d\n",
+        __func__, (void *)hostbuf, (ull)prewarm, (ull)hostbuf->reserved_size, mark_cold);
     return hostbuf;
 }
 
@@ -213,17 +215,19 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
                              uint64_t file_handle, uint64_t file_offset,
                              uint64_t size, uint64_t offset,
                              cudaStream_t stream, uint64_t device_ptr) {
+    HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
     char *host;
 
-    host = (char *)hostbuf_get_raw_address(hostbuf_ptr) + offset;
     if (size == 0) {
         return true;
     }
-    if (!host) {
+    if (!hostbuf || !hostbuf->base_address) {
         return false;
     }
+    host = (char *)hostbuf->base_address + offset;
     if (!stream || !device_ptr) {
-        return xfer_file_read(file_handle, file_offset, host, (size_t)size);
+        return xfer_file_read(file_handle, file_offset, host, (size_t)size,
+                              hostbuf->mark_cold);
     }
     if (device < 0 || !set_devctx_for_device(device)) {
         return false;
@@ -231,7 +235,8 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
 
-        if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk) ||
+        if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk,
+                            hostbuf->mark_cold) ||
             !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)(device_ptr + done), host + done,
                                         chunk, (CUstream)stream))) {
             return false;

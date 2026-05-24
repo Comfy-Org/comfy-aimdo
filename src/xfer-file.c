@@ -18,6 +18,7 @@ typedef struct {
     uint64_t offset;
     uint8_t *destination;
     size_t size;
+    bool mark_cold;
     XferFileWait *wait;
 } XferFileTask;
 
@@ -61,7 +62,8 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
 
     (void)arg;
     while (xfer_file_task_pop(&g_xfer_file_reader, &task)) {
-        ok = xfer_file_read_at(task.file_handle, task.offset, task.destination, task.size);
+        ok = xfer_file_read_at(task.file_handle, task.offset, task.destination,
+                               task.size, task.mark_cold);
         mutex_lock(task.wait->mutex);
         task.wait->failed = !ok || task.wait->failed;
         if (--task.wait->pending == 0) {
@@ -72,7 +74,8 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
     return 0;
 }
 
-bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination, size_t size) {
+bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
+                    size_t size, bool mark_cold) {
     XferFileWait wait = {
         .mutex = mutex_create(),
         .condvar = condvar_create(),
@@ -89,6 +92,7 @@ bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destinati
             .offset = offset + done,
             .destination = (uint8_t *)destination + done,
             .size = MIN(XFER_FILE_CHUNK_SIZE, size - done),
+            .mark_cold = mark_cold,
             .wait = &wait,
         };
 

@@ -9,7 +9,7 @@ if os.name == "nt":
     import msvcrt
 
 if lib is not None:
-    lib.hostbuf_allocate.argtypes = [ctypes.c_uint64, ctypes.c_uint64]
+    lib.hostbuf_allocate.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_bool]
     lib.hostbuf_allocate.restype = ctypes.c_void_p
 
     lib.hostbuf_free.argtypes = [ctypes.c_void_p]
@@ -51,12 +51,12 @@ def _file_handle(file_obj):
 
 
 class HostBuffer:
-    def __init__(self, size, prewarm=0, max_grow_size=0):
+    def __init__(self, size, prewarm=0, max_grow_size=0, mark_cold=True):
         size = int(size)
         max_mmap_size = max(size, int(max_grow_size))
         self.size = 0
         self.prewarm = max(0, int(prewarm))
-        self._ptr = lib.hostbuf_allocate(self.prewarm, max_mmap_size)
+        self._ptr = lib.hostbuf_allocate(self.prewarm, max_mmap_size, bool(mark_cold))
         if not self._ptr:
             raise RuntimeError("HostBuffer allocation failed")
         if size:
