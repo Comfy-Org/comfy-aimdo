@@ -12,6 +12,9 @@ if lib is not None:
     lib.model_mmap_get.argtypes = [ctypes.c_void_p]
     lib.model_mmap_get.restype = ctypes.c_void_p
 
+    lib.model_mmap_get_file_handle.argtypes = [ctypes.c_void_p]
+    lib.model_mmap_get_file_handle.restype = ctypes.c_uint64
+
     lib.model_mmap_bounce.argtypes = [ctypes.c_void_p]
     lib.model_mmap_bounce.restype = ctypes.c_bool
 
@@ -37,6 +40,9 @@ class ModelMMAP:
 
     def get(self):
         return lib.model_mmap_get(self.state)
+
+    def get_file_handle(self):
+        return int(lib.model_mmap_get_file_handle(self.state))
 
     def bounce(self):
         return bool(lib.model_mmap_bounce(self.state))

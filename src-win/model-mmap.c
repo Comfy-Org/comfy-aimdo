@@ -89,7 +89,10 @@ void *model_mmap_allocate(char *file_path) {
         goto fail_file;
     }
 
-    mmap->hFile = CreateFileW(file_path_wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    mmap->hFile = CreateFileW(file_path_wide, GENERIC_READ,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL, OPEN_EXISTING,
+                              FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     free(file_path_wide);
     file_path_wide = NULL;
     if (mmap->hFile == INVALID_HANDLE_VALUE) {
@@ -134,6 +137,13 @@ void *model_mmap_get(void *model_mmap_ptr) {
     ModelMMAP *mmap = (ModelMMAP *)model_mmap_ptr;
 
     return mmap ? mmap->base_address : NULL;
+}
+
+SHARED_EXPORT
+uint64_t model_mmap_get_file_handle(void *model_mmap_ptr) {
+    ModelMMAP *mmap = (ModelMMAP *)model_mmap_ptr;
+
+    return mmap ? (uint64_t)(uintptr_t)mmap->hFile : 0;
 }
 
 SHARED_EXPORT

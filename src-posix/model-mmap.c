@@ -69,6 +69,13 @@ void *model_mmap_get(void *model_mmap_ptr) {
 }
 
 SHARED_EXPORT
+uint64_t model_mmap_get_file_handle(void *model_mmap_ptr) {
+    ModelMMAP *mmap = (ModelMMAP *)model_mmap_ptr;
+
+    return mmap ? (uint64_t)mmap->fd : 0;
+}
+
+SHARED_EXPORT
 bool model_mmap_bounce(void *model_mmap_ptr) {
     ModelMMAP *mmap = (ModelMMAP *)model_mmap_ptr;
 
