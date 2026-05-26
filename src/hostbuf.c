@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "hostbuf-decommit.h"
 #include "hostbuf-plat.h"
 #include "hostbuf-prewarm.h"
 #include "xfer-file.h"
@@ -10,6 +11,7 @@ typedef struct HostBuffer {
     uint64_t reserved_size;
     uint64_t last_chunk_size;
     uint64_t prewarm;
+    HostbufDecommitState decommit;
     bool mark_cold;
 } HostBuffer;
 
@@ -106,13 +108,21 @@ static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size, bool do_un
         (ull)hostbuf->size, (ull)old_committed, (ull)new_committed);
     if (size >= hostbuf->size ||
         !hostbuf_prewarm_join() ||
-        (do_unregister && !CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + size))) ||
-        (new_committed < old_committed &&
-        !hostbuf_decommit_address_space((char *)hostbuf->base_address + new_committed,
-                                        (size_t)(old_committed - new_committed)))) {
+        (do_unregister && !CHECK_CU(cuMemHostUnregister((char *)hostbuf->base_address + size)))) {
         return false;
     }
     if (new_committed < old_committed) {
+        uint64_t done = new_committed;
+
+        while (done < old_committed) {
+            size_t chunk = (size_t)MIN(HOSTBUF_DECOMMIT_QUEUE_LIMIT, old_committed - done);
+
+            if (!hostbuf_decommit_async(&hostbuf->decommit,
+                                        (char *)hostbuf->base_address + done, chunk, false)) {
+                return false;
+            }
+            done += chunk;
+        }
         old_committed = new_committed;
     }
 
@@ -121,7 +131,10 @@ static bool hostbuf_truncate_impl(HostBuffer *hostbuf, uint64_t size, bool do_un
     if (!size && hostbuf->base_address) {
         log(VERBOSE, "%s: release base=%p reserved_size=%llu\n", __func__,
             hostbuf->base_address, (ull)hostbuf->reserved_size);
-        hostbuf_release_address_space(hostbuf->base_address, (size_t)hostbuf->reserved_size);
+        if (!hostbuf_decommit_async(&hostbuf->decommit, hostbuf->base_address,
+                                    (size_t)hostbuf->reserved_size, true)) {
+            return false;
+        }
         hostbuf->base_address = NULL;
         hostbuf->committed_size = 0;
     }
@@ -140,6 +153,10 @@ void *hostbuf_allocate(uint64_t prewarm, uint64_t reserved_size, bool mark_cold)
     hostbuf->prewarm = prewarm;
     hostbuf->mark_cold = mark_cold;
     hostbuf->reserved_size = ALIGN_UP(reserved_size + prewarm, hostbuf_reserve_granularity());
+    if (!hostbuf_decommit_state_init(&hostbuf->decommit)) {
+        free(hostbuf);
+        return NULL;
+    }
     log(VERBOSE, "%s: hostbuf=%p prewarm=%llu reserved_size=%llu mark_cold=%d\n",
         __func__, (void *)hostbuf, (ull)prewarm, (ull)hostbuf->reserved_size, mark_cold);
     return hostbuf;
@@ -156,6 +173,7 @@ void hostbuf_free(void *hostbuf_ptr) {
         (void *)hostbuf, hostbuf->base_address, (ull)hostbuf->size,
         (ull)hostbuf->committed_size, (ull)hostbuf->reserved_size);
     hostbuf_truncate_impl(hostbuf, 0, true);
+    hostbuf_decommit_state_destroy(&hostbuf->decommit);
     free(hostbuf);
 }
 
@@ -182,6 +200,7 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate,
     if (!hostbuf) {
         return NULL;
     }
+    hostbuf_decommit_wait(&hostbuf->decommit);
     old_size = hostbuf->size;
     *size_delta = 0;
 
