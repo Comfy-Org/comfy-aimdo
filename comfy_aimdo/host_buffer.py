@@ -45,6 +45,9 @@ if lib is not None:
     ]
     lib.hostbuf_file_reader_read.restype = ctypes.c_bool
 
+    lib.hostbuf_file_reader_retire_active.argtypes = []
+    lib.hostbuf_file_reader_retire_active.restype = ctypes.c_bool
+
     lib.hostbuf_file_reader_cleanup.argtypes = []
 
     lib.hostbuf_register.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
@@ -74,6 +77,11 @@ def read_file_to_device(file_obj, file_offset, size, stream, device_ptr, device,
 
 def cleanup_file_reader():
     lib.hostbuf_file_reader_cleanup()
+
+
+def retire_active_file_reader():
+    if not lib.hostbuf_file_reader_retire_active():
+        raise RuntimeError("hostbuf_file_reader_retire_active failed")
 
 
 class HostBuffer:

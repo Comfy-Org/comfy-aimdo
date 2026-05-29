@@ -17,7 +17,8 @@ typedef struct HostbufFileReaderSlot {
 static HostbufFileReaderSlot g_slots[HOSTBUF_FILE_READER_SLOTS];
 static int g_active = -1;
 
-static bool hostbuf_file_reader_retire_active(void) {
+SHARED_EXPORT
+bool hostbuf_file_reader_retire_active(void) {
     HostbufFileReaderSlot *slot;
 
     if (g_active < 0) {
@@ -25,10 +26,16 @@ static bool hostbuf_file_reader_retire_active(void) {
     }
 
     slot = &g_slots[g_active];
-    return !slot->offset ||
-           (!slot->event &&
-           CHECK_CU(cuEventCreate(&slot->event, CU_EVENT_DISABLE_TIMING)) &&
-           CHECK_CU(cuEventRecord(slot->event, (CUstream)slot->stream)));
+    if (!slot->offset) {
+        return true;
+    }
+    if (slot->event ||
+        (CHECK_CU(cuEventCreate(&slot->event, CU_EVENT_DISABLE_TIMING)) &&
+         CHECK_CU(cuEventRecord(slot->event, (CUstream)slot->stream)))) {
+        slot->offset = 0;
+        return true;
+    }
+    return false;
 }
 
 static HostbufFileReaderSlot *hostbuf_file_reader_next(cudaStream_t stream) {
@@ -83,7 +90,7 @@ bool hostbuf_file_reader_read(int device, uint64_t source_ptr, uint64_t source_o
         HostbufFileReaderSlot *slot = g_active < 0 ? NULL : &g_slots[g_active];
         size_t chunk;
 
-        if (!slot || slot->stream != stream ||
+        if (!slot || slot->event || slot->stream != stream ||
             (slot->offset + size >= HOSTBUF_FILE_READER_WINDOW &&
              slot->offset >= LEAD_IN_THRESHOLD)) {
             if (!hostbuf_file_reader_retire_active() ||
