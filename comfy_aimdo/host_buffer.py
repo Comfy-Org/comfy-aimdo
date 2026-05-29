@@ -41,6 +41,7 @@ if lib is not None:
         ctypes.c_void_p,  # cuda stream
         ctypes.c_uint64,  # device dest ptr
         ctypes.c_bool,    # mark_cold
+        ctypes.c_int,     # source mode: 0=file handle, 1=model mmap
     ]
     lib.hostbuf_file_reader_read.restype = ctypes.c_bool
 
@@ -67,7 +68,7 @@ def _file_handle(file_obj):
 def read_file_to_device(file_obj, file_offset, size, stream, device_ptr, device, mark_cold=True):
     if not lib.hostbuf_file_reader_read(int(device), _file_handle(file_obj),
                                         int(file_offset), int(size), int(stream) or None,
-                                        int(device_ptr), bool(mark_cold)):
+                                        int(device_ptr), bool(mark_cold), 0):
         raise RuntimeError("hostbuf_file_reader_read failed")
 
 

@@ -240,6 +240,10 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
                              uint64_t size, uint64_t offset,
                              cudaStream_t stream, uint64_t device_ptr) {
     HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+    XferFileSource source = {
+        .mode = XFER_FILE_SOURCE_HANDLE,
+        .as.file_handle = file_handle,
+    };
     char *host;
 
     if (size == 0) {
@@ -250,7 +254,7 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     }
     host = (char *)hostbuf->base_address + offset;
     if (!stream || !device_ptr) {
-        return xfer_file_read(file_handle, file_offset, host, (size_t)size,
+        return xfer_file_read(source, file_offset, host, (size_t)size,
                               hostbuf->mark_cold);
     }
     if (device < 0 || !set_devctx_for_device(device)) {
@@ -259,7 +263,7 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
 
-        if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk,
+        if (!xfer_file_read(source, file_offset + done, host + done, chunk,
                             hostbuf->mark_cold) ||
             !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)(device_ptr + done), host + done,
                                         chunk, (CUstream)stream))) {

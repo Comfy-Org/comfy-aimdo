@@ -14,7 +14,7 @@ typedef struct XferFileWait {
 } XferFileWait;
 
 typedef struct {
-    XferFileHandle file_handle;
+    XferFileSource source;
     uint64_t offset;
     uint8_t *destination;
     size_t size;
@@ -39,6 +39,15 @@ typedef struct {
 
 static XferFileReader g_xfer_file_reader;
 
+static void xfer_file_prefetch(const void *ptr, size_t size) {
+#if defined(_WIN32) || defined(_WIN64)
+    VirtualPrefetch((PVOID)ptr, size);
+#else
+    (void)ptr;
+    (void)size;
+#endif
+}
+
 static bool xfer_file_task_pop(XferFileReader *reader, XferFileTask *task) {
     mutex_lock(reader->mutex);
     while (reader->count == 0 && !reader->stop) {
@@ -62,8 +71,18 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
 
     (void)arg;
     while (xfer_file_task_pop(&g_xfer_file_reader, &task)) {
-        ok = xfer_file_read_at(task.file_handle, task.offset, task.destination,
-                               task.size, task.mark_cold);
+        if (task.source.mode == XFER_FILE_SOURCE_MMAP) {
+            const uint8_t *source = task.source.as.mmap + task.offset;
+
+            if (task.source.prefetch) {
+                xfer_file_prefetch(source, task.size);
+            }
+            memcpy(task.destination, source, task.size);
+            ok = true;
+        } else {
+            ok = xfer_file_read_at(task.source.as.file_handle, task.offset,
+                                   task.destination, task.size, task.mark_cold);
+        }
         mutex_lock(task.wait->mutex);
         task.wait->failed = !ok || task.wait->failed;
         if (--task.wait->pending == 0) {
@@ -74,7 +93,7 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
     return 0;
 }
 
-bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
+bool xfer_file_read(XferFileSource source, uint64_t offset, void *destination,
                     size_t size, bool mark_cold) {
     XferFileWait wait = {
         .mutex = mutex_create(),
@@ -88,7 +107,7 @@ bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destinati
     }
     for (size_t done = 0; done < size; done += XFER_FILE_CHUNK_SIZE) {
         XferFileTask task = {
-            .file_handle = file_handle,
+            .source = source,
             .offset = offset + done,
             .destination = (uint8_t *)destination + done,
             .size = MIN(XFER_FILE_CHUNK_SIZE, size - done),

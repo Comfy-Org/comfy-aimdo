@@ -20,6 +20,18 @@ if lib is not None:
 
     lib.model_mmap_deallocate.argtypes = [ctypes.c_void_p]
 
+    lib.hostbuf_file_reader_read.argtypes = [
+        ctypes.c_int,     # device
+        ctypes.c_uint64,  # handle / ModelMMAP state
+        ctypes.c_uint64,  # source offset
+        ctypes.c_uint64,  # size
+        ctypes.c_void_p,  # cuda stream
+        ctypes.c_uint64,  # device dest ptr
+        ctypes.c_bool,    # mark_cold, unused for mmap
+        ctypes.c_int,     # source mode: 0=file handle, 1=model mmap
+    ]
+    lib.hostbuf_file_reader_read.restype = ctypes.c_bool
+
 
 class ModelMMAP:
     def __init__(self, filepath):
@@ -46,6 +58,12 @@ class ModelMMAP:
 
     def bounce(self):
         return bool(lib.model_mmap_bounce(self.state))
+
+    def read_to_device(self, mmap_offset, size, stream, device_ptr, device):
+        if not lib.hostbuf_file_reader_read(int(device), self.state, int(mmap_offset),
+                                            int(size), int(stream) or None,
+                                            int(device_ptr), False, 1):
+            raise RuntimeError("hostbuf_file_reader_read failed")
 
     def __del__(self):
         state = getattr(self, "state", None)

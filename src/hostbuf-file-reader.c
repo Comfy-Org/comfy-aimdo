@@ -5,6 +5,8 @@
 #define LEAD_IN_THRESHOLD (HOSTBUF_FILE_READER_WINDOW - 16ULL * 1024ULL * 1024ULL)
 #define HOSTBUF_FILE_READER_SLOTS 3
 
+void *model_mmap_get(void *model_mmap_ptr);
+
 typedef struct HostbufFileReaderSlot {
     uint8_t *buffer;
     uint64_t offset;
@@ -54,14 +56,27 @@ static HostbufFileReaderSlot *hostbuf_file_reader_next(cudaStream_t stream) {
 }
 
 SHARED_EXPORT
-bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_offset,
+bool hostbuf_file_reader_read(int device, uint64_t source_ptr, uint64_t source_offset,
                               uint64_t size, cudaStream_t stream,
-                              uint64_t device_ptr, bool mark_cold) {
+                              uint64_t device_ptr, bool mark_cold, int source_mode) {
+    XferFileSource source = {
+        .mode = source_mode,
+        .prefetch = source_mode == XFER_FILE_SOURCE_MMAP,
+    };
+
     if (size == 0) {
         return true;
     }
     if (!device_ptr || device < 0 || !set_devctx_for_device(device)) {
         return false;
+    }
+    if (source.mode == XFER_FILE_SOURCE_MMAP) {
+        source.as.mmap = model_mmap_get((void *)(uintptr_t)source_ptr);
+        if (!source.as.mmap) {
+            return false;
+        }
+    } else {
+        source.as.file_handle = source_ptr;
     }
 
     while (size) {
@@ -78,7 +93,7 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
         }
 
         chunk = (size_t)MIN(size, HOSTBUF_FILE_READER_WINDOW - slot->offset);
-        if (!xfer_file_read(file_handle, file_offset, slot->buffer + slot->offset,
+        if (!xfer_file_read(source, source_offset, slot->buffer + slot->offset,
                             chunk, mark_cold) ||
             !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)device_ptr,
                                         slot->buffer + slot->offset,
@@ -87,7 +102,7 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
         }
 
         slot->offset += chunk;
-        file_offset += chunk;
+        source_offset += chunk;
         device_ptr += chunk;
         size -= chunk;
     }
