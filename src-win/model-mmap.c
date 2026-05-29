@@ -92,7 +92,7 @@ void *model_mmap_allocate(char *file_path) {
     mmap->hFile = CreateFileW(file_path_wide, GENERIC_READ,
                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                               NULL, OPEN_EXISTING,
-                              FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+                              FILE_FLAG_OVERLAPPED | FILE_FLAG_RANDOM_ACCESS, NULL);
     free(file_path_wide);
     file_path_wide = NULL;
     if (mmap->hFile == INVALID_HANDLE_VALUE) {
