@@ -26,3 +26,4 @@ bool xfer_file_read(XferFileSource source, uint64_t offset, void *destination,
                     size_t size, bool mark_cold);
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
                        size_t size, bool mark_cold);
+void xfer_file_prefetch(const void *ptr, size_t size);

@@ -7,6 +7,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+void xfer_file_prefetch(const void *ptr, size_t size) {
+    (void)ptr;
+    (void)size;
+}
+
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
                        size_t size, bool mark_cold) {
     int fd = (int)file_handle;

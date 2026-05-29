@@ -3,6 +3,15 @@
 
 #include <windows.h>
 
+void xfer_file_prefetch(const void *ptr, size_t size) {
+    WIN32_MEMORY_RANGE_ENTRY range = {
+        .VirtualAddress = (PVOID)ptr,
+        .NumberOfBytes = size,
+    };
+
+    PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);
+}
+
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
                        size_t size, bool mark_cold) {
     HANDLE handle = (HANDLE)(uintptr_t)file_handle;

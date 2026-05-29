@@ -39,15 +39,6 @@ typedef struct {
 
 static XferFileReader g_xfer_file_reader;
 
-static void xfer_file_prefetch(const void *ptr, size_t size) {
-#if defined(_WIN32) || defined(_WIN64)
-    VirtualPrefetch((PVOID)ptr, size);
-#else
-    (void)ptr;
-    (void)size;
-#endif
-}
-
 static bool xfer_file_task_pop(XferFileReader *reader, XferFileTask *task) {
     mutex_lock(reader->mutex);
     while (reader->count == 0 && !reader->stop) {
