@@ -3,26 +3,15 @@
 
 #define HOSTBUF_FILE_READER_WINDOW (64ULL * 1024ULL * 1024ULL)
 #define LEAD_IN_THRESHOLD (HOSTBUF_FILE_READER_WINDOW - 16ULL * 1024ULL * 1024ULL)
-#define HOSTBUF_FILE_READER_SLOTS 3
-
-typedef struct HostbufFileReaderSlot {
-    uint8_t *buffer;
-    uint64_t offset;
-    cudaStream_t stream;
-    CUevent event;
-} HostbufFileReaderSlot;
-
-static HostbufFileReaderSlot g_slots[HOSTBUF_FILE_READER_SLOTS];
-static int g_active = -1;
 
 static bool hostbuf_file_reader_retire_active(void) {
     HostbufFileReaderSlot *slot;
 
-    if (g_active < 0) {
+    if (g_devctx->_hostbuf_file_reader_active < 0) {
         return true;
     }
 
-    slot = &g_slots[g_active];
+    slot = &g_devctx->_hostbuf_file_reader_slots[g_devctx->_hostbuf_file_reader_active];
     return !slot->offset ||
            (!slot->event &&
            CHECK_CU(cuEventCreate(&slot->event, CU_EVENT_DISABLE_TIMING)) &&
@@ -32,8 +21,9 @@ static bool hostbuf_file_reader_retire_active(void) {
 static HostbufFileReaderSlot *hostbuf_file_reader_next(cudaStream_t stream) {
     HostbufFileReaderSlot *slot;
 
-    g_active = (g_active + 1) % HOSTBUF_FILE_READER_SLOTS;
-    slot = &g_slots[g_active];
+    g_devctx->_hostbuf_file_reader_active =
+        (g_devctx->_hostbuf_file_reader_active + 1) % HOSTBUF_FILE_READER_SLOTS;
+    slot = &g_devctx->_hostbuf_file_reader_slots[g_devctx->_hostbuf_file_reader_active];
 
     if (slot->buffer && slot->event) {
         if (!CHECK_CU(cuEventSynchronize(slot->event)) ||
@@ -49,7 +39,7 @@ static HostbufFileReaderSlot *hostbuf_file_reader_next(cudaStream_t stream) {
     }
 
     slot->offset = 0;
-    slot->stream = stream;
+    slot->stream = (CUstream)stream;
     return slot;
 }
 
@@ -65,10 +55,11 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
     }
 
     while (size) {
-        HostbufFileReaderSlot *slot = g_active < 0 ? NULL : &g_slots[g_active];
+        HostbufFileReaderSlot *slot = g_devctx->_hostbuf_file_reader_active < 0 ? NULL :
+            &g_devctx->_hostbuf_file_reader_slots[g_devctx->_hostbuf_file_reader_active];
         size_t chunk;
 
-        if (!slot || slot->stream != stream ||
+        if (!slot || slot->stream != (CUstream)stream ||
             (slot->offset + size >= HOSTBUF_FILE_READER_WINDOW &&
              slot->offset >= LEAD_IN_THRESHOLD)) {
             if (!hostbuf_file_reader_retire_active() ||
@@ -97,9 +88,13 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
 
 SHARED_EXPORT
 void hostbuf_file_reader_cleanup(void) {
+    if (!g_devctx) {
+        return;
+    }
+
     hostbuf_file_reader_retire_active();
     for (unsigned i = 0; i < HOSTBUF_FILE_READER_SLOTS; i++) {
-        HostbufFileReaderSlot *slot = &g_slots[i];
+        HostbufFileReaderSlot *slot = &g_devctx->_hostbuf_file_reader_slots[i];
 
         if (slot->buffer && slot->event) {
             CHECK_CU(cuEventSynchronize(slot->event));
@@ -109,6 +104,7 @@ void hostbuf_file_reader_cleanup(void) {
             CHECK_CU(cuMemFreeHost(slot->buffer));
         }
     }
-    memset(g_slots, 0, sizeof(g_slots));
-    g_active = -1;
+    memset(g_devctx->_hostbuf_file_reader_slots, 0,
+           sizeof(g_devctx->_hostbuf_file_reader_slots));
+    g_devctx->_hostbuf_file_reader_active = -1;
 }
