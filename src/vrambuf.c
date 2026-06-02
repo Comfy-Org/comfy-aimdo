@@ -1,10 +1,6 @@
 #include "vrambuf.h"
 
-#if defined(__HIP_PLATFORM_AMD__) && !defined(_WIN32)
-#  define VRAM_CHUNK_SIZE      CUDA_PAGE_SIZE
-#else
-#  define VRAM_CHUNK_SIZE      (16ULL * 1024 * 1024)
-#endif
+#define VRAM_CHUNK_SIZE (16ULL * M)
 
 SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
