@@ -111,7 +111,6 @@ bool plat_init() {
 
 SHARED_EXPORT
 void plat_cleanup() {
-    hostbuf_file_reader_cleanup();
     xfer_file_cleanup();
     aimdo_teardown_hooks();
     aimdo_cuda_runtime_cleanup();
@@ -186,6 +185,7 @@ SHARED_EXPORT
 void cleanup(void) {
     for (size_t i = 0; i < g_all_devctx_count; i++) {
         set_devctx(&g_all_devctxs[i]);
+        hostbuf_file_reader_cleanup();
         aimdo_wddm_cleanup();
         allocations_cleanup();
 
@@ -214,6 +214,7 @@ bool init(const int *cuda_device_ids, size_t num_devices) {
         AimdoContext *devctx = &g_all_devctxs[i];
 
         devctx->_device_id = cuda_device_ids[i];
+        devctx->_hostbuf_file_reader_active = -1;
         set_devctx(devctx);
 
         if (!allocations_init() ||

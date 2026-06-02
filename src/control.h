@@ -12,10 +12,18 @@
 
 #define VMM_HASH_SIZE   (1 << 12)
 #define SIZE_HASH_SIZE  1024
+#define HOSTBUF_FILE_READER_SLOTS 3
 
 typedef struct VramBuffer VramBuffer;
 typedef struct SizeEntry SizeEntry;
 typedef struct ModelVBAR ModelVBAR;
+
+typedef struct HostbufFileReaderSlot {
+    uint8_t *buffer;
+    uint64_t offset;
+    CUstream stream;
+    CUevent event;
+} HostbufFileReaderSlot;
 
 typedef struct AimdoContext {
     int _device_id;
@@ -33,6 +41,8 @@ typedef struct AimdoContext {
     VramBuffer *_vmm_table[VMM_HASH_SIZE];
     SizeEntry *_size_table[SIZE_HASH_SIZE];
     void *_size_table_lock;
+    HostbufFileReaderSlot _hostbuf_file_reader_slots[HOSTBUF_FILE_READER_SLOTS];
+    int _hostbuf_file_reader_active;
 #if defined(_WIN32) || defined(_WIN64)
     void *_wddm_adapter; /* IDXGIAdapter3* */
     uint64_t _wddm_timestamp_last_check;
