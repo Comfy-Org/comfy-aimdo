@@ -380,7 +380,8 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
             if (page_end > mv->watermark) {
                 log(DEBUG,
                     "VBAR allocation cancelled due to allocation-check watermark reduction "
-                    "usage=%zu MB surplus=%zd MB\n",
+                    "offset=%llu KB size=%llu KB usage=%zu MB surplus=%zd MB\n",
+                    (ull)(offset / K), (ull)(size / K),
                     total_vram_usage / M, surplus / (ssize_t)M);
                 return VBAR_FAULT_OOM;
             }
