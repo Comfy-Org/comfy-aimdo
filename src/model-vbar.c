@@ -97,9 +97,15 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
 
     do_free = do_free && rp->handle && (do_unpin || rp->pin_count == 0);
     if (do_free) {
-        CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
+        bool unmapped = CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
         unmap_workaround(vaddr, VBAR_PAGE_SIZE);
-        CHECK_CU(cuMemRelease(rp->handle));
+        bool released = CHECK_CU(cuMemRelease(rp->handle));
+
+        if (!unmapped || !released) {
+            log(ERROR, "%s: failed to free VBAR page %zu unmapped=%d released=%d\n",
+                __func__, page_nr, unmapped, released);
+            abort();
+        }
         total_vram_usage -= VBAR_PAGE_SIZE;
         rp->handle = 0;
         mv->resident_count--;
@@ -365,13 +371,17 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
         }
 
         if (!miss_alloc_checked) {
-            vbars_free_for_vbar(mv, page_end,
-                                (ssize_t)VBAR_MISS_ALLOC_GRACE -
-                                budget_deficit((page_end - page_nr) * VBAR_PAGE_SIZE));
+            ssize_t surplus = (ssize_t)VBAR_MISS_ALLOC_GRACE -
+                              budget_deficit((page_end - page_nr) * VBAR_PAGE_SIZE);
+
+            vbars_free_for_vbar(mv, page_end, surplus);
             miss_alloc_checked = true;
 
             if (page_end > mv->watermark) {
-                log(DEBUG, "VBAR allocation cancelled due to allocation-check watermark reduction\n");
+                log(DEBUG,
+                    "VBAR allocation cancelled due to allocation-check watermark reduction "
+                    "usage=%zu MB surplus=%zd MB\n",
+                    total_vram_usage / M, surplus / (ssize_t)M);
                 return VBAR_FAULT_OOM;
             }
         }
