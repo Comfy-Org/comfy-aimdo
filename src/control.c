@@ -172,7 +172,7 @@ void aimdo_analyze(void *devctx) {
     log(DEBUG, "  Cuda:  %7zu MB / %7zu MB Free\n", free_bytes / M, total_bytes / M);
 
     vbars_analyze(devctx, true);
-    allocations_analyze();
+    allocations_analyze(true);
 }
 
 SHARED_EXPORT

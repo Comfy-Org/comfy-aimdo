@@ -11,6 +11,8 @@ if lib is not None:
 
     lib.vbar_set_watermark_limit.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
 
+    lib.vbar_set_watermark.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
+
     lib.vbars_reset_watermark_limits.argtypes = [ctypes.c_void_p]
 
     lib.vbar_prioritize.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
@@ -98,6 +100,9 @@ class ModelVBAR:
 
     def set_watermark_limit(self, size_bytes):
         lib.vbar_set_watermark_limit(self._devctx, self._ptr, size_bytes)
+
+    def set_watermark(self, size_bytes):
+        lib.vbar_set_watermark(self._devctx, self._ptr, size_bytes)
 
     def free_memory(self, size_bytes):
         return lib.vbar_free_memory(self._devctx, self._ptr, int(size_bytes))

@@ -7,9 +7,14 @@ static inline unsigned int vmm_hash(CUdeviceptr ptr) {
     return ((uintptr_t)(void *)ptr >> VMM_HASH_SHIFT) % VMM_HASH_SIZE;
 }
 
-void allocations_analyze() {
+void allocations_analyze(bool only_dirty) {
     size_t total_size = 0;
     int count = 0;
+
+    if (only_dirty && !allocations_dirty) {
+        return;
+    }
+    allocations_dirty = false;
 
     log(DEBUG, "--- Allocation Analysis Start ---\n");
 
@@ -55,6 +60,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
         unsigned int h = vmm_hash(vrambuf_get(entry));
         entry->next = vmm_table[h];
         vmm_table[h] = entry;
+        allocations_dirty = true;
     }
 
     log(VERBOSE, "%s (return): ptr=%p\n", __func__, (void *)vrambuf_get(entry));
@@ -76,6 +82,7 @@ void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
         }
 
         *curr = entry->next;
+        allocations_dirty = true;
         vrambuf_destroy(entry);
         log(VERBOSE, "Freed: ptr=%p, size=%zuk, stream=%p\n", ptr, size / K, stream);
         return;

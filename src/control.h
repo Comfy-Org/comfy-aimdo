@@ -37,6 +37,7 @@ typedef struct AimdoContext {
     void *_highest_priority; /* ModelVBAR * */
     void *_lowest_priority; /* ModelVBAR * */
     bool _vbars_dirty;
+    bool _allocations_dirty;
     bool _integrated_device;
     VramBuffer *_vmm_table[VMM_HASH_SIZE];
     SizeEntry *_size_table[SIZE_HASH_SIZE];
@@ -66,6 +67,7 @@ bool set_devctx_for_current_cuda_device(void);
 #define highest_priority_p          (*(ModelVBAR **)&g_devctx->_highest_priority)
 #define lowest_priority_p           (*(ModelVBAR **)&g_devctx->_lowest_priority)
 #define vbars_dirty                 (g_devctx->_vbars_dirty)
+#define allocations_dirty           (g_devctx->_allocations_dirty)
 #define integrated_device           (g_devctx->_integrated_device)
 #define vmm_table                   (g_devctx->_vmm_table)
 #define size_table                  (g_devctx->_size_table)

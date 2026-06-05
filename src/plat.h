@@ -235,6 +235,6 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 
 bool allocations_init(void);
 void allocations_cleanup(void);
-void allocations_analyze();
+void allocations_analyze(bool only_dirty);
 SHARED_EXPORT
 void aimdo_analyze(void *devctx);
