@@ -30,6 +30,7 @@ typedef struct AimdoContext {
 
     uint64_t _vram_capacity;
     uint64_t _integrated_ram_headroom;
+    uint64_t _extra_vram_headroom;
     uint64_t _total_vram_usage;
     uint64_t _total_vram_last_check;
     ssize_t _deficit_sync;
@@ -61,6 +62,7 @@ bool set_devctx_for_current_cuda_device(void);
 
 #define vram_capacity               (g_devctx->_vram_capacity)
 #define integrated_ram_headroom     (g_devctx->_integrated_ram_headroom)
+#define extra_vram_headroom         (g_devctx->_extra_vram_headroom)
 #define total_vram_usage            (g_devctx->_total_vram_usage)
 #define total_vram_last_check       (g_devctx->_total_vram_last_check)
 #define deficit_sync                (g_devctx->_deficit_sync)

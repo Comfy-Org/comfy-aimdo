@@ -136,6 +136,10 @@ size_t vbars_free(ssize_t size) {
         }
     }
 
+    if (dirty) {
+        CHECK_CU(cuCtxSynchronize());
+    }
+
     return pages_needed;
 }
 
@@ -178,6 +182,10 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
                 cursor = spend_surplus_on_cursor(mv, target, cursor, &surplus);
             }
         }
+    }
+
+    if (synced) {
+        CHECK_CU(cuCtxSynchronize());
     }
 }
 
@@ -365,8 +373,9 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
         if (!miss_alloc_checked) {
             vbars_free_for_vbar(mv, page_end,
                                 (ssize_t)vram_capacity -
-                                (ssize_t)(total_vram_usage + VRAM_HEADROOM +
-                                          (page_end - page_nr) * VBAR_PAGE_SIZE));
+                                ((ssize_t)(total_vram_usage +
+                                           (page_end - page_nr) * VBAR_PAGE_SIZE) +
+                                 (ssize_t)simple_vram_headroom));
             miss_alloc_checked = true;
 
             if (page_end > mv->watermark) {
@@ -431,6 +440,11 @@ void vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
         }
         mod1(mv, page_nr, page_nr >= mv->watermark, false);
     }
+
+    if (page_end > mv->watermark) {
+        CHECK_CU(cuCtxSynchronize());
+    }
+
 }
 
 SHARED_EXPORT
@@ -449,6 +463,7 @@ void vbar_free(void *devctx, void *vbar) {
     }
     remove_vbar(mv);
     CHECK_CU(cuMemAddressFree(mv->vbar, (size_t)mv->nr_pages * VBAR_PAGE_SIZE));
+    CHECK_CU(cuCtxSynchronize());
     free(mv);
 }
 
@@ -510,6 +525,8 @@ uint64_t vbar_free_memory(void *devctx, void *vbar, uint64_t size) {
             pages_freed++;
         }
     }
+
+    CHECK_CU(cuCtxSynchronize());
 
     return (uint64_t)pages_freed * VBAR_PAGE_SIZE;
 }
