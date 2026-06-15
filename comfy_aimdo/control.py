@@ -31,10 +31,12 @@ def detect_vendor():
     return None
 
 
-def init(implementation: str | None = None):
+def init(implementation: str | None = None, simple_vram_headroom: int | None = None):
     global lib
 
     if lib is not None:
+        if simple_vram_headroom is not None:
+            lib.set_simple_vram_headroom(int(simple_vram_headroom))
         return True
 
     if implementation is None:
@@ -73,11 +75,17 @@ def init(implementation: str | None = None):
 
     lib.aimdo_analyze.argtypes = [ctypes.c_void_p]
 
+    lib.set_simple_vram_headroom.argtypes = [ctypes.c_int64]
+    lib.set_simple_vram_headroom.restype = None
+
     lib.init.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t]
     lib.init.restype = ctypes.c_bool
 
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
+
+    if simple_vram_headroom is not None:
+        lib.set_simple_vram_headroom(int(simple_vram_headroom))
 
     return True
 

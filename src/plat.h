@@ -145,6 +145,7 @@ void log_reset_shots();
 
 /* The default VRAM headroom. Different deficit methods with BYO headroom */
 #define VRAM_HEADROOM (256 * 1024 * 1024)
+extern int64_t simple_vram_headroom;
 
 static inline ssize_t budget_deficit(size_t size) {
     ssize_t deficit_simple, deficit_delta;
@@ -152,7 +153,8 @@ static inline ssize_t budget_deficit(size_t size) {
     const char *prevailing_deficit_method = "unknown";
 
     poll_budget_deficit(&prevailing_deficit_method);
-    deficit_simple = (ssize_t)(total_vram_usage + VRAM_HEADROOM + size) - (ssize_t)vram_capacity;
+    deficit_simple = (ssize_t)(total_vram_usage + size) + (ssize_t)simple_vram_headroom -
+                     (ssize_t)vram_capacity;
     deficit_delta = deficit_sync + (ssize_t)total_vram_usage -
                     (ssize_t)total_vram_last_check + (ssize_t)size;
     deficit = MAX(deficit_simple, deficit_delta) + (ssize_t)extra_vram_headroom;

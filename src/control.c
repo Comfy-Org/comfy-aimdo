@@ -51,11 +51,17 @@ static bool read_mem_available_bytes(size_t *mem_available_bytes) {
 #endif
 
 _Thread_local AimdoContext *g_devctx;
+int64_t simple_vram_headroom = VRAM_HEADROOM;
 
 static AimdoContext *g_all_devctxs;
 static size_t g_all_devctx_count;
 
 void hostbuf_file_reader_cleanup(void);
+
+SHARED_EXPORT
+void set_simple_vram_headroom(int64_t bytes) {
+    simple_vram_headroom = bytes;
+}
 
 SHARED_EXPORT
 void *get_devctx(int device_id) {

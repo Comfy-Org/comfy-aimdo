@@ -373,8 +373,9 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
         if (!miss_alloc_checked) {
             vbars_free_for_vbar(mv, page_end,
                                 (ssize_t)vram_capacity -
-                                (ssize_t)(total_vram_usage + VRAM_HEADROOM +
-                                          (page_end - page_nr) * VBAR_PAGE_SIZE));
+                                ((ssize_t)(total_vram_usage +
+                                           (page_end - page_nr) * VBAR_PAGE_SIZE) +
+                                 (ssize_t)simple_vram_headroom));
             miss_alloc_checked = true;
 
             if (page_end > mv->watermark) {
