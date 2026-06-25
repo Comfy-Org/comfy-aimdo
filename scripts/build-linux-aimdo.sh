@@ -90,10 +90,20 @@ else
     FUNCHOOK_LIBS="$FUNCHOOK_LIBS $FUNCHOOK_BUILD_DIR/libdistorm.a"
 fi
 
+# Shared POSIX platform helpers (everything in src-posix EXCEPT the vendor
+# funchook installers, which are mutually exclusive: cuda-funchooks.c for
+# CUDA/HIP, ze-funchooks.c for XPU - each defines aimdo_setup_hooks).
+POSIX_PLAT_SRCS="$ROOT_DIR/src-posix/model-mmap.c \
+$ROOT_DIR/src-posix/module-load.c \
+$ROOT_DIR/src-posix/hostbuf-plat.c \
+$ROOT_DIR/src-posix/thread-plat.c \
+$ROOT_DIR/src-posix/xfer-file-plat.c"
+
 # shellcheck disable=SC2086
 gcc -shared -o "$CUDA_OUTPUT_PATH" -fPIC -O2 -g -pthread \
     ${AIMDO_EXTRA_CFLAGS:-} \
-    "$ROOT_DIR"/src/*.c "$ROOT_DIR"/src-cuda/dispatch.c "$ROOT_DIR"/src-posix/*.c \
+    "$ROOT_DIR"/src/*.c "$ROOT_DIR"/src-cuda/dispatch.c \
+    $POSIX_PLAT_SRCS "$ROOT_DIR"/src-posix/cuda-funchooks.c \
     -I"$ROOT_DIR/src" -I"$FUNCHOOK_SRC/include" \
     $FUNCHOOK_LIBS \
     -ldl
@@ -102,7 +112,30 @@ gcc -shared -o "$CUDA_OUTPUT_PATH" -fPIC -O2 -g -pthread \
 gcc -shared -o "$ROCM_OUTPUT_PATH" -fPIC -O2 -g -pthread \
     -D__HIP_PLATFORM_AMD__ \
     ${AIMDO_EXTRA_CFLAGS:-} \
-    "$ROOT_DIR"/src/*.c "$ROOT_DIR"/src-hip/dispatch.c "$ROOT_DIR"/src-posix/*.c \
+    "$ROOT_DIR"/src/*.c "$ROOT_DIR"/src-hip/dispatch.c \
+    $POSIX_PLAT_SRCS "$ROOT_DIR"/src-posix/cuda-funchooks.c \
     -I"$ROOT_DIR/src" -I"$FUNCHOOK_SRC/include" \
     $FUNCHOOK_LIBS \
     -ldl
+
+# ---- Intel XPU (Level Zero) backend -----------------------------------------
+# Opt-in: requires a Level Zero SDK (headers + libze_loader) pointed to by
+# LEVEL_ZERO_DIR (containing include/ and lib/). Mirrors the Windows XPU build
+# in build-win-xpu.bat: src-xpu (Level Zero shim + ze_loader hooks) + the shared
+# POSIX platform helpers + the funchook installer, linked against ze_loader.
+XPU_OUTPUT_PATH="$ROOT_DIR/comfy_aimdo/aimdo_xpu.so"
+if [ "${AIMDO_BUILD_XPU:-0}" = "1" ]; then
+    : "${LEVEL_ZERO_DIR:?set LEVEL_ZERO_DIR to a Level Zero SDK (with include/ and lib/) for the XPU build}"
+    # shellcheck disable=SC2086
+    gcc -shared -o "$XPU_OUTPUT_PATH" -fPIC -O2 -g -pthread \
+        -DAIMDO_XPU \
+        ${AIMDO_EXTRA_CFLAGS:-} \
+        "$ROOT_DIR"/src/*.c \
+        "$ROOT_DIR"/src-xpu/dispatch.c "$ROOT_DIR"/src-xpu/ze-shim.c \
+        $POSIX_PLAT_SRCS "$ROOT_DIR"/src-posix/ze-funchooks.c \
+        -I"$ROOT_DIR/src" -I"$ROOT_DIR/src-xpu" \
+        -I"$LEVEL_ZERO_DIR/include" -I"$FUNCHOOK_SRC/include" \
+        $FUNCHOOK_LIBS \
+        -L"$LEVEL_ZERO_DIR/lib" -lze_loader -ldl \
+        -Wl,--no-undefined
+fi
