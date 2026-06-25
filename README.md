@@ -15,6 +15,18 @@ The correct backend is auto-detected from the installed torch build
 (`+cu` / `+rocm` / `+xpu`). The Intel XPU backend requires a recent Level Zero
 runtime/driver that exports `zeDriverGetDefaultContext` and `zeDeviceSynchronize`.
 
+### Testing on Intel XPU
+
+* `examples/xpu_smoke.py` — self-contained (no ComfyUI, no model files).
+  Exercises backend auto-detect + load, the `zeMemAllocDevice`/`zeMemFree`
+  accounting detour, VBAR fault/map under 1.5x-VRAM pressure, the host→device
+  copy path, and faulted-in weight integrity.
+* `examples/xpu_comfyui_offload.py` — end-to-end through ComfyUI. Runs a
+  Z-Image Turbo text-to-image generation on a model that is larger than VRAM,
+  so it only succeeds if offloading works; without aimdo the overflow spills
+  into shared system VRAM and generation time balloons. See the file header for
+  the required models and environment variables.
+
 ---
 
 ## How it works:
