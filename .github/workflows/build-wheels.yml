@@ -80,6 +80,39 @@ jobs:
             dxgi.lib dxguid.lib detours.lib onecore.lib
         shell: cmd
 
+      - name: Build Windows Intel XPU binary
+        # Intel XPU only exists on x86_64; reuse the Detours build from the step above.
+        if: matrix.platform == 'windows' && matrix.arch == 'amd64'
+        env:
+          # Must be recent enough to export zeDriverGetDefaultContext and
+          # zeDeviceSynchronize, which the XPU shim uses (added in newer L0 loaders).
+          LEVEL_ZERO_VERSION: 1.30.0
+          VCVARS_ARCH: x64
+          DETOURS_LIB_DIR: C:/Detours/lib.X64
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" %VCVARS_ARCH%
+
+          set "LZ_DIR=%RUNNER_TEMP%\level-zero"
+          if exist "%LZ_DIR%" rmdir /s /q "%LZ_DIR%"
+          curl -L -o "%RUNNER_TEMP%\level-zero-win-sdk.zip" ^
+            "https://github.com/oneapi-src/level-zero/releases/download/v%LEVEL_ZERO_VERSION%/level-zero-win-sdk-%LEVEL_ZERO_VERSION%.zip"
+          powershell -NoProfile -Command "Expand-Archive -Path '%RUNNER_TEMP%\level-zero-win-sdk.zip' -DestinationPath '%LZ_DIR%' -Force"
+
+          REM src-win\*.c minus cuda-detour.c (its aimdo_setup_hooks/aimdo_teardown_hooks
+          REM clash with src-xpu\ze-detour.c). The remaining src-win files are the
+          REM platform helpers the upstream src\*.c depends on.
+          cl.exe /LD /O2 ^
+            src\*.c src-xpu\*.c ^
+            src-win\model-mmap.c src-win\shmem-detect.c src-win\module-load.c ^
+            src-win\hostbuf-plat.c src-win\thread-plat.c src-win\xfer-file-plat.c ^
+            /DAIMDO_XPU /FIcompiler.h /Isrc-xpu /Isrc /Isrc-win ^
+            /I"%LZ_DIR%\include" /IC:/Detours/include /Fe:comfy_aimdo\aimdo_xpu.dll ^
+            /link /LIBPATH:"%LZ_DIR%\lib" /LIBPATH:%DETOURS_LIB_DIR% ^
+            ze_loader.lib detours.lib dxgi.lib dxguid.lib onecore.lib
+          if not exist comfy_aimdo\aimdo_xpu.dll exit /b 1
+
       - name: Build default Stub Wheel
         if: matrix.platform == 'linux' && matrix.arch == 'x86_64'
         run: |
