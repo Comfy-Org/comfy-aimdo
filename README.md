@@ -4,10 +4,16 @@ This project is a pytorch VRAM allocator that implements on-demand offloading of
 
 ## Support:
 
-* **Nvidia GPUs only**
+* **GPUs:**
+    * **Nvidia** (CUDA 12.8+) — Windows & Linux
+    * **AMD** (ROCm) — Windows & Linux
+    * **Intel** (XPU / Level Zero) — Windows (discrete Arc validated); Linux in progress
 * **Pytorch 2.8+**
-* **Cuda 12.8+**
 * **Windows 11+** / **Linux** as per python ManyLinux support
+
+The correct backend is auto-detected from the installed torch build
+(`+cu` / `+rocm` / `+xpu`). The Intel XPU backend requires a recent Level Zero
+runtime/driver that exports `zeDriverGetDefaultContext` and `zeDeviceSynchronize`.
 
 ---
 
