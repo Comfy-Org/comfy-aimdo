@@ -124,7 +124,40 @@ gcc -shared -o "$ROCM_OUTPUT_PATH" -fPIC -O2 -g -pthread \
 # in build-win-xpu.bat: src-xpu (Level Zero shim + ze_loader hooks) + the shared
 # POSIX platform helpers + the funchook installer, linked against ze_loader.
 XPU_OUTPUT_PATH="$ROOT_DIR/comfy_aimdo/aimdo_xpu.so"
-if [ "${AIMDO_BUILD_XPU:-0}" = "1" ]; then
+# Level Zero loader version to build when LEVEL_ZERO_DIR is not supplied. Must
+# export zeDriverGetDefaultContext and zeDeviceSynchronize (newer L0 loaders).
+LEVEL_ZERO_VERSION="${LEVEL_ZERO_VERSION:-1.30.0}"
+# Intel XPU only exists on x86_64.
+if [ "${AIMDO_BUILD_XPU:-0}" = "1" ] && [ "$ARCH" = "x86_64" ]; then
+    # If no SDK was supplied, build the Level Zero loader from source (headers +
+    # libze_loader.so) using the same cmake we use for funchook. The loader is
+    # NOT shipped in the wheel (auditwheel excludes it); it is resolved from the
+    # user's Intel driver at runtime.
+    if [ -z "${LEVEL_ZERO_DIR:-}" ]; then
+        LEVEL_ZERO_DIR="$BUILD_DIR/level-zero-$LEVEL_ZERO_VERSION/prefix"
+        if [ ! -f "$LEVEL_ZERO_DIR/lib/libze_loader.so" ]; then
+            if ! command -v cmake >/dev/null 2>&1; then
+                echo "cmake is required to build the Level Zero loader" >&2
+                exit 1
+            fi
+            L0_SRC="$BUILD_DIR/level-zero-$LEVEL_ZERO_VERSION/src"
+            L0_TARBALL="$BUILD_DIR/level-zero-$LEVEL_ZERO_VERSION.tar.gz"
+            if [ ! -f "$L0_SRC/CMakeLists.txt" ]; then
+                mkdir -p "$BUILD_DIR"
+                curl --retry 3 --retry-all-errors -fL "https://github.com/oneapi-src/level-zero/archive/refs/tags/v$LEVEL_ZERO_VERSION.tar.gz" \
+                    -o "$L0_TARBALL"
+                rm -rf "$L0_SRC"
+                mkdir -p "$L0_SRC"
+                tar -xzf "$L0_TARBALL" -C "$L0_SRC" --strip-components=1
+            fi
+            cmake -S "$L0_SRC" -B "$L0_SRC/build" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$LEVEL_ZERO_DIR" \
+                -DCMAKE_INSTALL_LIBDIR=lib
+            cmake --build "$L0_SRC/build" --target install \
+                -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+        fi
+    fi
     : "${LEVEL_ZERO_DIR:?set LEVEL_ZERO_DIR to a Level Zero SDK (with include/ and lib/) for the XPU build}"
     # shellcheck disable=SC2086
     gcc -shared -o "$XPU_OUTPUT_PATH" -fPIC -O2 -g -pthread \
@@ -138,4 +171,19 @@ if [ "${AIMDO_BUILD_XPU:-0}" = "1" ]; then
         $FUNCHOOK_LIBS \
         -L"$LEVEL_ZERO_DIR/lib" -lze_loader -ldl \
         -Wl,--no-undefined
+
+    # Sanity: the artifact must dynamically depend on the exact loader SONAME
+    # that auditwheel excludes (libze_loader.so.1). It is resolved from the
+    # user's Intel driver at runtime, not bundled into the wheel. If the
+    # DT_NEEDED ever diverges from the exclude in build-wheels.yml, auditwheel
+    # would try to graft the loader and fail, so assert the SONAME here.
+    if ! command -v readelf >/dev/null 2>&1; then
+        echo "readelf is required to validate aimdo_xpu.so dependencies" >&2
+        exit 1
+    fi
+    readelf -d "$XPU_OUTPUT_PATH" | grep -Fq 'Shared library: [libze_loader.so.1]' || {
+        readelf -d "$XPU_OUTPUT_PATH" >&2
+        echo "aimdo_xpu.so must declare DT_NEEDED libze_loader.so.1" >&2
+        exit 1
+    }
 fi

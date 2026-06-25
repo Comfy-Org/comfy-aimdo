@@ -147,7 +147,11 @@ jobs:
           CIBW_MANYLINUX_AARCH64_IMAGE: custom-cuda-builder
           CIBW_BUILD: ${{ matrix.platform == 'linux' && format('cp39-manylinux_{0}', matrix.arch) || format('cp39-win_{0}', matrix.arch) }}
           CIBW_BEFORE_BUILD_LINUX: bash ./scripts/build-linux-aimdo.sh
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 -w {dest_dir} {wheel}"
+          # Build the Intel XPU backend too (build-linux-aimdo.sh skips it on
+          # non-x86_64). libze_loader, like libcuda, is excluded from the wheel
+          # and resolved from the user's driver at runtime.
+          CIBW_ENVIRONMENT_LINUX: AIMDO_BUILD_XPU=1
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libcuda.so.1 --exclude libze_loader.so.1 -w {dest_dir} {wheel}"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
