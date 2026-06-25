@@ -144,7 +144,7 @@ if [ "${AIMDO_BUILD_XPU:-0}" = "1" ] && [ "$ARCH" = "x86_64" ]; then
             L0_TARBALL="$BUILD_DIR/level-zero-$LEVEL_ZERO_VERSION.tar.gz"
             if [ ! -f "$L0_SRC/CMakeLists.txt" ]; then
                 mkdir -p "$BUILD_DIR"
-                curl --retry 3 --retry-all-errors -fL "https://github.com/oneapi-src/level-zero/archive/refs/tags/v$LEVEL_ZERO_VERSION.tar.gz" \
+                curl --retry 3 -fL "https://github.com/oneapi-src/level-zero/archive/refs/tags/v$LEVEL_ZERO_VERSION.tar.gz" \
                     -o "$L0_TARBALL"
                 rm -rf "$L0_SRC"
                 mkdir -p "$L0_SRC"
