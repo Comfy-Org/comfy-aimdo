@@ -28,6 +28,8 @@ def detect_vendor():
         return "cuda"
     if '+rocm' in version:
         return "rocm"
+    if '+xpu' in version:
+        return "xpu"
     return None
 
 
@@ -49,6 +51,7 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     impl = {
         "cuda": "aimdo",
         "rocm": "aimdo_rocm",
+        "xpu": "aimdo_xpu",
     }[implementation]
 
     try:
@@ -67,7 +70,7 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
         lib = ctypes.CDLL(str(base_path / f"{impl}.{ext}"), mode=mode)
     except Exception as e:
         logging.info(f"comfy-aimdo failed to load: {e}")
-        logging.info(f"NOTE: comfy-aimdo currently only supports Nvidia and AMD GPUs")
+        logging.info(f"NOTE: comfy-aimdo currently only supports Nvidia, AMD, and Intel (XPU) GPUs")
         return False
 
     lib.get_total_vram_usage.argtypes = [ctypes.c_void_p]

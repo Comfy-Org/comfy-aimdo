@@ -21,6 +21,6 @@ cl.exe /LD /O2 ^
   src-win\model-mmap.c src-win\shmem-detect.c src-win\module-load.c ^
   src-win\hostbuf-plat.c src-win\thread-plat.c src-win\xfer-file-plat.c ^
   /DAIMDO_XPU /FIcompiler.h /Isrc-xpu /Isrc /Isrc-win ^
-  /I"%LEVEL_ZERO_SDK%\include" /I"%DETOURS_DIR%\include" /Fe:comfy_aimdo\aimdo.dll ^
+  /I"%LEVEL_ZERO_SDK%\include" /I"%DETOURS_DIR%\include" /Fe:comfy_aimdo\aimdo_xpu.dll ^
   /link /LIBPATH:"%LEVEL_ZERO_SDK%\lib" /LIBPATH:"%DETOURS_DIR%\lib.X64" ^
   ze_loader.lib detours.lib dxgi.lib dxguid.lib onecore.lib
