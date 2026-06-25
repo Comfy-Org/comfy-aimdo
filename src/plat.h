@@ -238,5 +238,10 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 bool allocations_init(void);
 void allocations_cleanup(void);
 void allocations_analyze(bool only_dirty);
+
+/* Accounting hooks usable by non-CUDA interception backends (e.g. the Level
+ * Zero detour in src-xpu/ze-detour.c). */
+void aimdo_account_alloc(CUdeviceptr ptr, size_t size);
+void aimdo_account_free(CUdeviceptr ptr);
 SHARED_EXPORT
 void aimdo_analyze(void *devctx);

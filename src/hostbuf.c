@@ -249,7 +249,14 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
         return false;
     }
     host = (char *)hostbuf->base_address + offset;
+#ifdef AIMDO_XPU
+    /* On XPU the `stream` handle is a torch SYCL stream, not a usable CUstream,
+     * so callers pass 0. The blocking ze_cuMemcpyHtoDAsync ignores the stream
+     * anyway, so gate the device copy on the destination pointer alone. */
+    if (!device_ptr) {
+#else
     if (!stream || !device_ptr) {
+#endif
         return xfer_file_read(file_handle, file_offset, host, (size_t)size,
                               hostbuf->mark_cold);
     }

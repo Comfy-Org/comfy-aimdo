@@ -150,6 +150,17 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
     log(DEBUG, "%s: could not account free at %p\n", __func__, (void *)(uintptr_t)ptr);
 }
 
+/* Exposed accounting hooks for backends that intercept allocation at a
+ * different API layer (e.g. the Level Zero detour in src-xpu/ze-detour.c).
+ */
+void aimdo_account_alloc(CUdeviceptr ptr, size_t size) {
+    account_alloc(ptr, size);
+}
+
+void aimdo_account_free(CUdeviceptr ptr) {
+    account_free(ptr, NULL);
+}
+
 int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
                       CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
     CUdeviceptr dptr;
