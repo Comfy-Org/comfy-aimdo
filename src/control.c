@@ -226,10 +226,13 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
 
         if (!allocations_init() ||
             !CHECK_CU(cuDeviceGet(&dev, cuda_device_ids[i])) ||
-            !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev)) ||
-            !aimdo_wddm_init(dev)) {
+            !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev))) {
             goto fail;
         }
+        /* Non-fatal: WDDM/DXGI may be unavailable (e.g. Hyper-V GPU-PV).
+         * poll_budget_deficit falls back to cuMemGetInfo when g_wddm_adapter
+         * is NULL, which gives adequate budget tracking in that case. */
+        aimdo_wddm_init(dev);
 
 #if !defined(_WIN32) && !defined(_WIN64) && !defined(__HIP_PLATFORM_AMD__)
         devctx->_integrated_device = is_integrated_cuda_device(dev);
