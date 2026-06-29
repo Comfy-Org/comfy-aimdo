@@ -4,10 +4,12 @@ This project is a pytorch VRAM allocator that implements on-demand offloading of
 
 ## Support:
 
-* **Nvidia GPUs only**
-* **Pytorch 2.8+**
-* **Cuda 12.8+**
+* **Nvidia GPUs** (CUDA) **and AMD GPUs** (ROCm/HIP)
+* **PyTorch 2.8+**
+* **CUDA 12.8+** (Nvidia) / **ROCm 7+** (AMD)
 * **Windows 11+** / **Linux** as per python ManyLinux support
+
+> **Note:** In ComfyUI, dynamic VRAM is auto-enabled on Nvidia but not on AMD. On AMD, launch ComfyUI with `--enable-dynamic-vram` to turn it on.
 
 ---
 
@@ -46,8 +48,10 @@ see examples/example.py
 
 ## Backend:
 
-* VBAR allocation is done with `cuMemAddressReserve()`, faulting with `cuMemCreate()` and `cuMemMap()` and all frees done with appropriate converse APIs.
+* VBAR allocation is done with `cuMemAddressReserve()`, faulting with `cuMemCreate()` and `cuMemMap()` and all frees done with corresponding APIs.
 * For consistency with VBAR memory management, main pytorch allocator plugin is also implemented with `cuMemAddressReserve` -> `cuMemCreate` -> `cuMemMap`. This also behaves a lot better on Windows systems with System Memory fallback.
+
+On AMD, the equivalent HIP APIs (`hipMemAddressReserve` -> `hipMemCreate` -> `hipMemMap`, and their converse calls) are used throughout via the same flow.
 
 ## Caveats:
 
