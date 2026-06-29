@@ -1,10 +1,6 @@
 #include "vrambuf.h"
 
-#if defined(__HIP_PLATFORM_AMD__) && !defined(_WIN32)
-#  define VRAM_CHUNK_SIZE      CUDA_PAGE_SIZE
-#else
-#  define VRAM_CHUNK_SIZE      (16ULL * 1024 * 1024)
-#endif
+#define VRAM_CHUNK_SIZE (16ULL * M)
 
 /* ROCm/Windows mitigation: a HIP-runtime VMM defect faults after a large VA
  * window is repeatedly reserved+freed per node. We keep the reservation alive
