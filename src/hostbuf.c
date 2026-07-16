@@ -1,5 +1,6 @@
 #include "plat.h"
 #include "hostbuf-decommit.h"
+#include "hostbuf-file-reader.h"
 #include "hostbuf-plat.h"
 #include "hostbuf-prewarm.h"
 #include "xfer-file.h"
@@ -15,7 +16,8 @@ typedef struct HostBuffer {
     bool mark_cold;
 } HostBuffer;
 
-static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size, bool do_register) {
+static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size, bool do_register,
+                         bool do_prewarm) {
     size_t page_size = hostbuf_page_size();
     uint64_t target_committed = ALIGN_UP(size + hostbuf->prewarm, page_size);
 
@@ -63,7 +65,7 @@ static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size, bool do_register) {
             return false;
         }
     }
-    if (size > hostbuf->committed_size &&
+    if (do_prewarm && size > hostbuf->committed_size &&
         (!hostbuf_prewarm_start((char *)hostbuf->base_address + hostbuf->committed_size,
                                 (size_t)(size - hostbuf->committed_size)) ||
          !hostbuf_prewarm_join())) {
@@ -74,7 +76,7 @@ static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size, bool do_register) {
                                     (size_t)(size - hostbuf->size), 0))) {
         goto fail_decommit;
     }
-    if (target_committed > prewarm_start) {
+    if (do_prewarm && target_committed > prewarm_start) {
         if (!hostbuf_prewarm_start((char *)hostbuf->base_address + prewarm_start,
                                    target_committed - prewarm_start)) {
             goto fail_unregister;
@@ -214,7 +216,7 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate,
     }
 
     offset = hostbuf->size;
-    if (!hostbuf_grow(hostbuf, offset + size, do_register)) {
+    if (!hostbuf_grow(hostbuf, offset + size, do_register, hostbuf->mark_cold)) {
         *size_delta = (int64_t)(hostbuf->size - old_size);
         return NULL;
     }
@@ -256,6 +258,11 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     if (device < 0 || !set_devctx_for_device(device)) {
         return false;
     }
+    if (!hostbuf->mark_cold) {
+        return hostbuf_file_reader_read_cached(device, file_handle, file_offset,
+                                               size, stream, device_ptr, host,
+                                               false);
+    }
     for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
 
@@ -267,6 +274,20 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
         }
     }
     return true;
+}
+
+SHARED_EXPORT
+bool hostbuf_copy_to_device(void *hostbuf_ptr, int device, uint64_t offset,
+                            uint64_t size, cudaStream_t stream,
+                            uint64_t device_ptr) {
+    HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+
+    if (!hostbuf || offset > hostbuf->size || size > hostbuf->size - offset) {
+        return false;
+    }
+    return hostbuf_file_reader_copy_cached(
+        device, (const char *)hostbuf->base_address + offset,
+        size, stream, device_ptr);
 }
 
 SHARED_EXPORT

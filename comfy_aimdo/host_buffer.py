@@ -33,6 +33,16 @@ if lib is not None:
     ]
     lib.hostbuf_read_file_slice.restype = ctypes.c_bool
 
+    lib.hostbuf_copy_to_device.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+    ]
+    lib.hostbuf_copy_to_device.restype = ctypes.c_bool
+
     lib.hostbuf_file_reader_read.argtypes = [
         ctypes.c_int,     # device
         ctypes.c_uint64,  # handle / fd
@@ -112,6 +122,12 @@ class HostBuffer:
     def register(self, offset, size):
         if not lib.hostbuf_register(self._ptr, int(offset), int(size)):
             raise RuntimeError("HostBuffer.register failed")
+
+    def copy_to_device(self, device, offset, size, stream, device_ptr):
+        if not lib.hostbuf_copy_to_device(
+                self._ptr, int(device), int(offset), int(size),
+                int(stream) or None, int(device_ptr)):
+            raise RuntimeError("HostBuffer.copy_to_device failed")
 
     def unregister(self, offset):
         if not lib.hostbuf_unregister(self._ptr, int(offset)):

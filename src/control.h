@@ -23,6 +23,7 @@ typedef struct HostbufFileReaderSlot {
     uint64_t offset;
     CUstream stream;
     CUevent event;
+    void *copy_group;
 } HostbufFileReaderSlot;
 
 typedef struct AimdoContext {
