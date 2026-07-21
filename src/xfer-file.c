@@ -19,6 +19,7 @@ typedef struct {
     uint8_t *destination;
     size_t size;
     bool mark_cold;
+    bool direct;
     XferFileWait *wait;
 } XferFileTask;
 
@@ -62,8 +63,13 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
 
     (void)arg;
     while (xfer_file_task_pop(&g_xfer_file_reader, &task)) {
-        ok = xfer_file_read_at(task.file_handle, task.offset, task.destination,
-                               task.size, task.mark_cold);
+        if (task.direct) {
+            ok = xfer_file_read_at_direct(task.file_handle, task.offset,
+                                          task.destination, task.size);
+        } else {
+            ok = xfer_file_read_at(task.file_handle, task.offset, task.destination,
+                                   task.size, task.mark_cold);
+        }
         mutex_lock(task.wait->mutex);
         task.wait->failed = !ok || task.wait->failed;
         if (--task.wait->pending == 0) {
@@ -74,25 +80,28 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
     return 0;
 }
 
-bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
-                    size_t size, bool mark_cold) {
+static bool xfer_file_read_impl(XferFileHandle file_handle, uint64_t offset,
+                                void *destination, size_t size, bool mark_cold,
+                                bool direct) {
     XferFileWait wait = {
         .mutex = mutex_create(),
         .condvar = condvar_create(),
         .pending = (size + XFER_FILE_CHUNK_SIZE - 1) / XFER_FILE_CHUNK_SIZE,
     };
+    XferFileHandle direct_handle = direct ? xfer_file_open_direct(file_handle) : 0;
     bool ok = false;
 
-    if (!wait.mutex || !wait.condvar) {
+    if ((direct && !direct_handle) || !wait.mutex || !wait.condvar) {
         goto fail;
     }
     for (size_t done = 0; done < size; done += XFER_FILE_CHUNK_SIZE) {
         XferFileTask task = {
-            .file_handle = file_handle,
+            .file_handle = direct ? direct_handle : file_handle,
             .offset = offset + done,
             .destination = (uint8_t *)destination + done,
             .size = MIN(XFER_FILE_CHUNK_SIZE, size - done),
             .mark_cold = mark_cold,
+            .direct = direct,
             .wait = &wait,
         };
 
@@ -113,9 +122,22 @@ bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destinati
     mutex_unlock(wait.mutex);
     ok = !wait.failed;
 fail:
+    if (direct_handle) {
+        xfer_file_close_direct(direct_handle);
+    }
     condvar_destroy(wait.condvar);
     mutex_destroy(wait.mutex);
     return ok;
+}
+
+bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
+                    size_t size, bool mark_cold) {
+    return xfer_file_read_impl(file_handle, offset, destination, size, mark_cold, false);
+}
+
+bool xfer_file_read_direct(XferFileHandle file_handle, uint64_t offset, void *destination,
+                           size_t size) {
+    return xfer_file_read_impl(file_handle, offset, destination, size, false, true);
 }
 
 bool xfer_file_init(void) {

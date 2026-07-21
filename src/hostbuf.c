@@ -237,6 +237,17 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate,
  * GPU section as soon as the window containing it has been filled.
  */
 #define HOSTBUF_STREAM_WINDOW (64ULL * 1024ULL * 1024ULL)
+#define HOSTBUF_DIRECT_ALIGNMENT 4096
+
+static bool hostbuf_read_file(HostBuffer *hostbuf, uint64_t file_handle,
+                              uint64_t file_offset, void *destination,
+                              size_t size) {
+    if (((uintptr_t)destination | file_offset) & (HOSTBUF_DIRECT_ALIGNMENT - 1)) {
+        return xfer_file_read(file_handle, file_offset, destination, size,
+                              hostbuf->mark_cold);
+    }
+    return xfer_file_read_direct(file_handle, file_offset, destination, size);
+}
 
 SHARED_EXPORT
 bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
@@ -257,8 +268,7 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     }
     host = (char *)hostbuf->base_address + offset;
     if (!gpu_section_count) {
-        return xfer_file_read(file_handle, file_offset, host, (size_t)size,
-                              hostbuf->mark_cold);
+        return hostbuf_read_file(hostbuf, file_handle, file_offset, host, (size_t)size);
     }
     if (device < 0 || !set_devctx_for_device(device)) {
         return false;
@@ -267,8 +277,8 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
         uint64_t chunk_end = done + chunk;
 
-        if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk,
-                            hostbuf->mark_cold)) {
+        if (!hostbuf_read_file(hostbuf, file_handle, file_offset + done,
+                               host + done, chunk)) {
             return false;
         }
         while (gpu_section_index < gpu_section_count) {
