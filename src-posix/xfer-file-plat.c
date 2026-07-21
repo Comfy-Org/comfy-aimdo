@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define XFER_FILE_DIRECT_ALIGNMENT 4096
@@ -28,6 +29,17 @@ XferFileHandle xfer_file_open_direct(XferFileHandle file_handle) {
 
 void xfer_file_close_direct(XferFileHandle file_handle) {
     close((int)file_handle);
+}
+
+bool xfer_file_direct_matches(XferFileHandle direct_handle,
+                              XferFileHandle file_handle) {
+    struct stat direct_stat;
+    struct stat source_stat;
+
+    return fstat((int)direct_handle, &direct_stat) == 0 &&
+           fstat((int)file_handle, &source_stat) == 0 &&
+           direct_stat.st_dev == source_stat.st_dev &&
+           direct_stat.st_ino == source_stat.st_ino;
 }
 
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,

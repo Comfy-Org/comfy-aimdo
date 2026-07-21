@@ -36,9 +36,48 @@ typedef struct {
     unsigned count;
 
     bool stop;
+    struct XferFileDirectHandle *direct_handles;
 } XferFileReader;
 
+typedef struct XferFileDirectHandle {
+    XferFileHandle source;
+    XferFileHandle direct;
+    struct XferFileDirectHandle *next;
+} XferFileDirectHandle;
+
 static XferFileReader g_xfer_file_reader;
+
+static XferFileHandle xfer_file_get_direct(XferFileHandle file_handle) {
+    XferFileDirectHandle *entry;
+    XferFileHandle direct;
+
+    mutex_lock(g_xfer_file_reader.mutex);
+    for (entry = g_xfer_file_reader.direct_handles; entry; entry = entry->next) {
+        if (entry->source == file_handle &&
+            xfer_file_direct_matches(entry->direct, file_handle)) {
+            direct = entry->direct;
+            mutex_unlock(g_xfer_file_reader.mutex);
+            return direct;
+        }
+    }
+    direct = xfer_file_open_direct(file_handle);
+    if (!direct) {
+        mutex_unlock(g_xfer_file_reader.mutex);
+        return 0;
+    }
+    entry = malloc(sizeof(*entry));
+    if (!entry) {
+        xfer_file_close_direct(direct);
+        mutex_unlock(g_xfer_file_reader.mutex);
+        return 0;
+    }
+    entry->source = file_handle;
+    entry->direct = direct;
+    entry->next = g_xfer_file_reader.direct_handles;
+    g_xfer_file_reader.direct_handles = entry;
+    mutex_unlock(g_xfer_file_reader.mutex);
+    return direct;
+}
 
 static bool xfer_file_task_pop(XferFileReader *reader, XferFileTask *task) {
     mutex_lock(reader->mutex);
@@ -88,7 +127,7 @@ static bool xfer_file_read_impl(XferFileHandle file_handle, uint64_t offset,
         .condvar = condvar_create(),
         .pending = (size + XFER_FILE_CHUNK_SIZE - 1) / XFER_FILE_CHUNK_SIZE,
     };
-    XferFileHandle direct_handle = direct ? xfer_file_open_direct(file_handle) : 0;
+    XferFileHandle direct_handle = direct ? xfer_file_get_direct(file_handle) : 0;
     bool ok = false;
 
     if ((direct && !direct_handle) || !wait.mutex || !wait.condvar) {
@@ -122,9 +161,6 @@ static bool xfer_file_read_impl(XferFileHandle file_handle, uint64_t offset,
     mutex_unlock(wait.mutex);
     ok = !wait.failed;
 fail:
-    if (direct_handle) {
-        xfer_file_close_direct(direct_handle);
-    }
     condvar_destroy(wait.condvar);
     mutex_destroy(wait.mutex);
     return ok;
@@ -160,6 +196,8 @@ bool xfer_file_init(void) {
 }
 
 void xfer_file_cleanup(void) {
+    XferFileDirectHandle *entry;
+
     if (g_xfer_file_reader.mutex) {
         mutex_lock(g_xfer_file_reader.mutex);
         g_xfer_file_reader.stop = true;
@@ -172,6 +210,11 @@ void xfer_file_cleanup(void) {
         if (g_xfer_file_reader.threads[i]) {
             thread_join(g_xfer_file_reader.threads[i]);
         }
+    }
+    while ((entry = g_xfer_file_reader.direct_handles)) {
+        g_xfer_file_reader.direct_handles = entry->next;
+        xfer_file_close_direct(entry->direct);
+        free(entry);
     }
     condvar_destroy(g_xfer_file_reader.has_space);
     condvar_destroy(g_xfer_file_reader.has_items);
