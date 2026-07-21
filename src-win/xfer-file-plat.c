@@ -21,18 +21,6 @@ void xfer_file_close_direct(XferFileHandle file_handle) {
     CloseHandle((HANDLE)(uintptr_t)file_handle);
 }
 
-bool xfer_file_direct_matches(XferFileHandle direct_handle,
-                              XferFileHandle file_handle) {
-    BY_HANDLE_FILE_INFORMATION direct_info;
-    BY_HANDLE_FILE_INFORMATION source_info;
-
-    return GetFileInformationByHandle((HANDLE)(uintptr_t)direct_handle, &direct_info) &&
-           GetFileInformationByHandle((HANDLE)(uintptr_t)file_handle, &source_info) &&
-           direct_info.dwVolumeSerialNumber == source_info.dwVolumeSerialNumber &&
-           direct_info.nFileIndexHigh == source_info.nFileIndexHigh &&
-           direct_info.nFileIndexLow == source_info.nFileIndexLow;
-}
-
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
                        size_t size, bool mark_cold) {
     HANDLE handle = (HANDLE)(uintptr_t)file_handle;

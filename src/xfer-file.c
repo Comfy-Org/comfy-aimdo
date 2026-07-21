@@ -51,31 +51,24 @@ static XferFileHandle xfer_file_get_direct(XferFileHandle file_handle) {
     XferFileDirectHandle *entry;
     XferFileHandle direct;
 
-    mutex_lock(g_xfer_file_reader.mutex);
     for (entry = g_xfer_file_reader.direct_handles; entry; entry = entry->next) {
-        if (entry->source == file_handle &&
-            xfer_file_direct_matches(entry->direct, file_handle)) {
-            direct = entry->direct;
-            mutex_unlock(g_xfer_file_reader.mutex);
-            return direct;
+        if (entry->source == file_handle) {
+            return entry->direct;
         }
     }
     direct = xfer_file_open_direct(file_handle);
     if (!direct) {
-        mutex_unlock(g_xfer_file_reader.mutex);
         return 0;
     }
     entry = malloc(sizeof(*entry));
     if (!entry) {
         xfer_file_close_direct(direct);
-        mutex_unlock(g_xfer_file_reader.mutex);
         return 0;
     }
     entry->source = file_handle;
     entry->direct = direct;
     entry->next = g_xfer_file_reader.direct_handles;
     g_xfer_file_reader.direct_handles = entry;
-    mutex_unlock(g_xfer_file_reader.mutex);
     return direct;
 }
 
