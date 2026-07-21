@@ -8,6 +8,15 @@ lib = control.lib
 if os.name == "nt":
     import msvcrt
 
+
+class HostBufferGPUSection(ctypes.Structure):
+    _fields_ = [
+        ("offset", ctypes.c_uint64),
+        ("device_ptr", ctypes.c_uint64),
+        ("size", ctypes.c_uint64),
+    ]
+
+
 if lib is not None:
     lib.hostbuf_allocate.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_bool]
     lib.hostbuf_allocate.restype = ctypes.c_void_p
@@ -29,7 +38,8 @@ if lib is not None:
         ctypes.c_uint64,  # size
         ctypes.c_uint64,  # offset
         ctypes.c_void_p,  # cuda stream (NULL = blocking host-only)
-        ctypes.c_uint64,  # device dest ptr (0 = blocking host-only)
+        ctypes.POINTER(HostBufferGPUSection),
+        ctypes.c_size_t,
     ]
     lib.hostbuf_read_file_slice.restype = ctypes.c_bool
 
@@ -101,13 +111,33 @@ class HostBuffer:
             raise RuntimeError("HostBuffer.extend failed")
         return int(ptr) if ptr else 0
 
-    def read_file_slice(self, file_obj, file_offset, size, offset=0, stream=0, device_ptr=0, device=-1):
+    def read_file_slice2(self, file_obj, file_offset, size, offset=0, stream=0,
+                         device=-1, gpu_sections=()):
         device = -1 if device is None else int(device)
+
+        size = int(size)
+        previous_end = 0
+        for section_offset, _, section_size in gpu_sections:
+            if section_offset < previous_end:
+                raise ValueError("HostBuffer GPU sections must be ordered and non-overlapping")
+            if section_offset < 0 or section_size < 0 or section_offset + section_size > size:
+                raise ValueError("HostBuffer GPU section exceeds the file slice")
+            previous_end = section_offset + section_size
+
+        sections = (HostBufferGPUSection * len(gpu_sections))(
+            *(HostBufferGPUSection(*section) for section in gpu_sections)
+        )
         if not lib.hostbuf_read_file_slice(self._ptr, device, _file_handle(file_obj),
-                                           int(file_offset), int(size), int(offset),
-                                           int(stream) or None, int(device_ptr)):
-            raise RuntimeError("HostBuffer.read_file_slice failed")
+                                           int(file_offset), size, int(offset),
+                                           int(stream) or None, sections, len(sections)):
+            raise RuntimeError("HostBuffer.read_file_slice2 failed")
         self.size = max(self.size, int(offset) + int(size))
+
+    def read_file_slice(self, file_obj, file_offset, size, offset=0, stream=0, device_ptr=0, device=-1):
+        gpu_sections = ((0, device_ptr, size),) if device_ptr else ()
+        return self.read_file_slice2(file_obj, file_offset, size, offset=offset,
+                                     stream=stream, device=device,
+                                     gpu_sections=gpu_sections)
 
     def register(self, offset, size):
         if not lib.hostbuf_register(self._ptr, int(offset), int(size)):

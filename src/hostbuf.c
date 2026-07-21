@@ -15,6 +15,12 @@ typedef struct HostBuffer {
     bool mark_cold;
 } HostBuffer;
 
+typedef struct HostBufferGPUSection {
+    uint64_t offset;
+    uint64_t device_ptr;
+    uint64_t size;
+} HostBufferGPUSection;
+
 static bool hostbuf_grow(HostBuffer *hostbuf, uint64_t size, bool do_register) {
     size_t page_size = hostbuf_page_size();
     uint64_t target_committed = ALIGN_UP(size + hostbuf->prewarm, page_size);
@@ -227,10 +233,8 @@ void *hostbuf_extend(void *hostbuf_ptr, uint64_t size, bool reallocate,
     return (char *)hostbuf->base_address + offset;
 }
 
-/* Stream a file slice through the hostbuf into device memory in 64 MiB windows.
- * Each window is filled by the xfer_file_read worker pool, then handed to the
- * device via cuMemcpyHtoDAsync so the next window's read overlaps the prior
- * window's H2D copy (the natural 2-slot pipeline depth).
+/* Read a file slice into the hostbuf in 64 MiB windows and enqueue each ordered
+ * GPU section as soon as the window containing it has been filled.
  */
 #define HOSTBUF_STREAM_WINDOW (64ULL * 1024ULL * 1024ULL)
 
@@ -238,8 +242,11 @@ SHARED_EXPORT
 bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
                              uint64_t file_handle, uint64_t file_offset,
                              uint64_t size, uint64_t offset,
-                             cudaStream_t stream, uint64_t device_ptr) {
+                             cudaStream_t stream,
+                             const HostBufferGPUSection *gpu_sections,
+                             size_t gpu_section_count) {
     HostBuffer *hostbuf = (HostBuffer *)hostbuf_ptr;
+    size_t gpu_section_index = 0;
     char *host;
 
     if (size == 0) {
@@ -249,7 +256,7 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
         return false;
     }
     host = (char *)hostbuf->base_address + offset;
-    if (!stream || !device_ptr) {
+    if (!gpu_section_count) {
         return xfer_file_read(file_handle, file_offset, host, (size_t)size,
                               hostbuf->mark_cold);
     }
@@ -258,12 +265,33 @@ bool hostbuf_read_file_slice(void *hostbuf_ptr, int device,
     }
     for (uint64_t done = 0; done < size; done += HOSTBUF_STREAM_WINDOW) {
         size_t chunk = (size_t)MIN(HOSTBUF_STREAM_WINDOW, size - done);
+        uint64_t chunk_end = done + chunk;
 
         if (!xfer_file_read(file_handle, file_offset + done, host + done, chunk,
-                            hostbuf->mark_cold) ||
-            !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)(device_ptr + done), host + done,
-                                        chunk, (CUstream)stream))) {
+                            hostbuf->mark_cold)) {
             return false;
+        }
+        while (gpu_section_index < gpu_section_count) {
+            const HostBufferGPUSection *section = &gpu_sections[gpu_section_index];
+            uint64_t section_end = section->offset + section->size;
+            uint64_t copy_start;
+            uint64_t copy_end;
+
+            if (section->offset >= chunk_end) {
+                break;
+            }
+            copy_start = MAX(section->offset, done);
+            copy_end = MIN(section_end, chunk_end);
+            if (copy_start < copy_end &&
+                !CHECK_CU(cuMemcpyHtoDAsync((CUdeviceptr)(section->device_ptr + copy_start - section->offset),
+                                            host + copy_start, (size_t)(copy_end - copy_start),
+                                            (CUstream)stream))) {
+                return false;
+            }
+            if (section_end > chunk_end) {
+                break;
+            }
+            gpu_section_index++;
         }
     }
     return true;
