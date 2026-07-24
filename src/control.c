@@ -148,7 +148,6 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
             "%s: MemAvailable poll available=%zu MB headroom=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
             __func__, mem_available / M, integrated_ram_headroom / M,
             deficit_sync / (ssize_t)M, total_vram_usage / M);
-        log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
         return true;
     }
 #endif
@@ -161,7 +160,6 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
         "%s: cuMemGetInfo poll free=%zu MB total=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
         __func__, free_vram / M, total_vram / M, deficit_sync / (ssize_t)M, total_vram_usage / M);
     *prevailing_deficit_method = "cuMemGetInfo";
-    log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
     return true;
 }
 
