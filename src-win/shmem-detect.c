@@ -110,6 +110,8 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
     uint64_t effective_budget = vram_capacity;
     size_t free_vram = 0, total_vram = 0;
+    bool wddm_ok = false;
+    bool cuda_ok = false;
 
     uint64_t now = GET_TICK();
 
@@ -122,6 +124,7 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
     if (g_wddm_adapter) {
         if (SUCCEEDED(g_wddm_adapter->lpVtbl->QueryVideoMemoryInfo(g_wddm_adapter, 0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
             effective_budget = info.Budget;
+            wddm_ok = true;
             log(DEBUG,
                 "%s: WDDM budget=%zu MB usage=%zu MB reservation=%zu MB available=%zu MB\n",
                 __func__, (size_t)(info.Budget / M), (size_t)(info.CurrentUsage / M),
@@ -133,10 +136,11 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
     }
 
     deficit_sync = (ssize_t)(total_vram_usage + WDDM_BUDGET_HEADROOM) - (ssize_t)effective_budget;
-    *prevailing_deficit_method = "WDDM budget";
+    *prevailing_deficit_method = wddm_ok ? "WDDM budget" : "physical capacity fallback";
 
     if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
         ssize_t deficit_cuda = (ssize_t)(CUDA_BUDGET_HEADROOM / 2) - (ssize_t)free_vram;
+        cuda_ok = true;
 
         log(DEBUG,
             "%s: cuMemGetInfo free=%zu MB total=%zu MB deficit_cuda=%zd MB\n",
@@ -148,8 +152,7 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
         }
     }
 
-    log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
-    return true;
+    return wddm_ok || cuda_ok;
 }
 
 void aimdo_wddm_cleanup()

@@ -9,6 +9,7 @@ import math
 import comfy_aimdo.control
 comfy_aimdo.control.init()
 comfy_aimdo.control.set_log_info()
+#comfy_aimdo.control.set_log_detail() #use this to see allocator decisions
 #comfy_aimdo.control.set_log_debug() #use this to see much more information
 #comfy_aimdo.control.set_log_verbose() #use this to see even more information (there is also vverbose)
 

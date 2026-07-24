@@ -119,6 +119,7 @@ enum DebugLevels {
     ERROR,
     WARNING,
     INFO,
+    DETAIL,
     DEBUG,
     VERBOSE,
     VVERBOSE,
@@ -159,7 +160,7 @@ static inline ssize_t budget_deficit(size_t size) {
                     (ssize_t)total_vram_last_check + (ssize_t)size;
     deficit = MAX(deficit_simple, deficit_delta) + (ssize_t)extra_vram_headroom;
     if (deficit > 0) {
-        log(DEBUG, "%s: Prevailing Method: %s Deficit: %zu Extra Headroom: %zu Alloc Size %zu\n", __func__,
+        log_shot(DETAIL, "%s: Prevailing Method: %s Deficit: %zu Extra Headroom: %zu Alloc Size %zu\n", __func__,
             deficit_simple > deficit_delta ? "simple" : prevailing_deficit_method,
             (size_t)deficit / M, (size_t)extra_vram_headroom / M, size / M);
     }

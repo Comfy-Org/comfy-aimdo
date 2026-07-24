@@ -11,6 +11,7 @@ SHARED_EXPORT void set_log_level_critical() { set_log_level(CRITICAL); }
 SHARED_EXPORT void set_log_level_error() { set_log_level(ERROR); }
 SHARED_EXPORT void set_log_level_warning() { set_log_level(WARNING); }
 SHARED_EXPORT void set_log_level_info() { set_log_level(INFO); }
+SHARED_EXPORT void set_log_level_detail() { set_log_level(DETAIL); }
 SHARED_EXPORT void set_log_level_debug() { set_log_level(DEBUG); }
 SHARED_EXPORT void set_log_level_verbose() { set_log_level(VERBOSE); }
 SHARED_EXPORT void set_log_level_vverbose() { set_log_level(VVERBOSE); }
@@ -22,6 +23,7 @@ static const char *level_strs [] = {
     LEVEL_STR1(ERROR),
     LEVEL_STR1(WARNING),
     LEVEL_STR1(INFO),
+    LEVEL_STR1(DETAIL),
     LEVEL_STR1(DEBUG),
     LEVEL_STR1(VERBOSE),
     LEVEL_STR1(VVERBOSE),
