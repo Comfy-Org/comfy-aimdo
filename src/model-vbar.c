@@ -344,6 +344,13 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
 
     set_devctx((AimdoContext *)devctx);
 
+    /*
+     * vbar_fault can evict and unmap pages while CUDA work from the previous
+     * layer is still consuming them. Complete in-flight work before any
+     * residency changes to avoid use-after-unmap and driver TDR failures.
+     */
+    CHECK_CU(cuCtxSynchronize());
+
     size_t page_end = VBAR_GET_PAGE_NR_UP(offset + size);
 
     log(VVERBOSE, "%s (start): offset=%lldk, size=%lldk\n", __func__, (ull)(offset / K), (ull)(size / K));
