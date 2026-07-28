@@ -96,12 +96,62 @@ def test_passthrough(stream, other):
     print("external and other-stream passthrough: ok")
 
 
+def test_mismatch_cleanup(stream):
+    control.push_record(stream)
+    control.iterate()
+    value = torch.empty(M, dtype=torch.uint8, device="cuda")
+    del value
+    graph = control.pop()
+
+    control.push_record(stream, graph)
+    control.iterate()
+    try:
+        torch.empty(2 * M, dtype=torch.uint8, device="cuda")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("allocation graph mismatch was not reported")
+
+    try:
+        control.pop()
+    except RuntimeError as error:
+        assert error.graph == graph
+    else:
+        raise AssertionError("poisoned allocation graph pop did not fail")
+    control.destroy_record(graph)
+    print("mismatched graph cleanup: ok")
+
+
+def test_cross_stream_use_is_rejected(stream, other):
+    control.push_record(stream)
+    control.iterate()
+    value = torch.empty(M, dtype=torch.uint8, device="cuda")
+    with torch.cuda.stream(other):
+        other.wait_stream(stream)
+        value.fill_(7)
+    value.record_stream(other)
+    del value
+    torch.cuda.synchronize()
+
+    try:
+        control.pop()
+    except RuntimeError as error:
+        graph = error.graph
+        assert "outside its record stream" in str(error)
+    else:
+        raise AssertionError("cross-stream allocation graph use was not rejected")
+    control.destroy_record(graph)
+    print("cross-stream graph rejection: ok")
+
+
 stream = torch.cuda.Stream()
 other = torch.cuda.Stream()
 with torch.cuda.stream(stream):
     test_graph_reuse(stream)
     test_nested_graph_reuse(stream)
     test_passthrough(stream, other)
+    test_mismatch_cleanup(stream)
+    test_cross_stream_use_is_rejected(stream, other)
 
 test_graph_reuse(torch.cuda.default_stream())
 

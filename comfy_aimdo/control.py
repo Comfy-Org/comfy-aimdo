@@ -202,7 +202,12 @@ def iterate():
 
 def pop():
     graph = ctypes.c_void_p()
-    _record_call("pop", ctypes.byref(graph))
+    status = lib.pop(ctypes.byref(graph))
+    if status:
+        error = lib.record_last_error()
+        exception = RuntimeError(error.decode() if error else f"allocation record failed ({status})")
+        exception.graph = graph.value
+        raise exception
     return graph.value
 
 

@@ -433,9 +433,11 @@ int pop(void **graph) {
     RecordRoot *root;
     int status;
 
-    if (graph) {
-        *graph = NULL;
+    if (!graph) {
+        return record_error(frame ? frame->root : NULL, RECORD_INVALID_STATE,
+                            "pop requires an allocation graph output");
     }
+    *graph = NULL;
     if (!frame) {
         return record_error(NULL, RECORD_INVALID_STATE, "no allocation record is active");
     }
@@ -472,9 +474,7 @@ int pop(void **graph) {
 
     g_record_frame = NULL;
     root->active = false;
-    if (graph) {
-        *graph = frame;
-    }
+    *graph = frame;
     if (root->error[0]) {
         snprintf(g_record_error, sizeof(g_record_error), "%s", root->error);
     }
@@ -494,9 +494,9 @@ int destroy_record(void *graph) {
         return record_error(NULL, RECORD_UNSUPPORTED,
                             "allocation graph CUDA context changed");
     }
-    if (cuStreamSynchronize(root->stream) != CUDA_SUCCESS) {
+    if (cuCtxSynchronize() != CUDA_SUCCESS) {
         snprintf(g_record_error, sizeof(g_record_error),
-                 "could not synchronize the allocation graph stream; destruction may be retried");
+                 "could not synchronize the allocation graph context; destruction may be retried");
         return RECORD_CUDA_FAILURE;
     }
     if (!release_root(root)) {
@@ -635,6 +635,7 @@ bool record_free(CUdeviceptr dev_ptr, CUstream stream, bool is_async,
     *status = CUDA_ERROR_INVALID_VALUE;
     if (!is_async || root->stream != stream) {
         record_error(root, RECORD_UNSUPPORTED, "compiled allocation freed outside its record stream");
+        *status = CUDA_SUCCESS;
         return true;
     }
     if (root->devctx != g_devctx || !record_context_matches(root) || root->poisoned ||
@@ -679,10 +680,9 @@ void record_cleanup(void) {
     while (frame->parent) {
         frame = frame->parent;
     }
-    if (!record_context_matches(frame->root) ||
-        cuStreamSynchronize(frame->root->stream) != CUDA_SUCCESS) {
+    if (!record_context_matches(frame->root) || cuCtxSynchronize() != CUDA_SUCCESS) {
         g_record_frame = NULL;
-        log(ERROR, "%s: leaking an active allocation record because its stream could not be synchronized\n",
+        log(ERROR, "%s: leaking an active allocation record because its context could not be synchronized\n",
             __func__);
         return;
     }

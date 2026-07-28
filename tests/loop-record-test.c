@@ -21,6 +21,7 @@ static size_t g_unmap_calls;
 static size_t g_release_calls;
 static size_t g_address_free_calls;
 static size_t g_sync_calls;
+static size_t g_context_sync_calls;
 static CUresult g_sync_status;
 static CUresult g_unmap_status;
 static CUmemGenericAllocationHandle g_mapped_handles[32];
@@ -127,6 +128,11 @@ static CUresult mock_stream_synchronize(CUstream stream) {
     return g_sync_status;
 }
 
+static CUresult mock_context_synchronize(void) {
+    g_context_sync_calls++;
+    return g_sync_status;
+}
+
 #include "../src/loop-record.c"
 
 static void reset_mocks(void) {
@@ -143,6 +149,7 @@ static void reset_mocks(void) {
     g_release_calls = 0;
     g_address_free_calls = 0;
     g_sync_calls = 0;
+    g_context_sync_calls = 0;
     g_sync_status = CUDA_SUCCESS;
     g_unmap_status = CUDA_SUCCESS;
     memset(g_mapped_handles, 0, sizeof(g_mapped_handles));
@@ -150,6 +157,7 @@ static void reset_mocks(void) {
     memset(&g_cuda, 0, sizeof(g_cuda));
     g_cuda.p_cuGetErrorString = mock_get_error_string;
     g_cuda.p_cuCtxGetCurrent = mock_ctx_get_current;
+    g_cuda.p_cuCtxSynchronize = mock_context_synchronize;
     g_cuda.p_cuStreamSynchronize = mock_stream_synchronize;
     g_cuda.p_cuMemAddressReserve = mock_address_reserve;
     g_cuda.p_cuMemAddressFree = mock_address_free;
@@ -233,7 +241,7 @@ static void test_record_replay_and_page_alias(void) {
     assert(pop_graph(RECORD_OK) == graph);
 
     destroy_graph(graph);
-    assert(g_sync_calls == 1);
+    assert(g_context_sync_calls == 1);
     assert(g_unmap_calls == 2);
     assert(g_release_calls == 1);
     assert(g_address_free_calls == 2);
@@ -313,7 +321,7 @@ static void test_compiled_pointer_cannot_leave_stream(void) {
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     assert(record_free(ptr, other, true, &status));
-    assert(status == CUDA_ERROR_INVALID_VALUE);
+    assert(status == CUDA_SUCCESS);
     destroy_graph(pop_graph(RECORD_MISMATCH));
     assert(strstr(record_last_error(), "outside its record stream"));
 }
@@ -328,7 +336,7 @@ static void test_live_allocation_rejects_iteration(void) {
     assert(iterate() == RECORD_MISMATCH);
     destroy_graph(pop_graph(RECORD_MISMATCH));
     assert(strstr(record_last_error(), "allocations remain live"));
-    assert(g_sync_calls == 1);
+    assert(g_context_sync_calls == 1);
 }
 
 static void test_child_iteration_count_must_match(void) {
@@ -416,6 +424,64 @@ static void test_context_change_does_not_teardown(void) {
     destroy_graph(pop_graph(RECORD_OK));
 }
 
+static void test_resumed_graph_mismatch_can_be_destroyed(void) {
+    CUstream stream = (CUstream)(uintptr_t)0xb0;
+    CUdeviceptr ptr;
+    CUresult status = CUDA_SUCCESS;
+
+    reset_mocks();
+    assert(push_record(stream, NULL) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    ptr = recorded_malloc(M, stream);
+    recorded_free(ptr, stream);
+    void *graph = pop_graph(RECORD_OK);
+
+    assert(push_record(stream, graph) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    ptr = 0;
+    assert(record_malloc_async(&ptr, 2 * M, stream, &status));
+    assert(status == CUDA_ERROR_INVALID_VALUE);
+    assert(pop_graph(RECORD_MISMATCH) == graph);
+    destroy_graph(graph);
+}
+
+static void test_resumed_graph_requires_same_stream(void) {
+    CUstream stream = (CUstream)(uintptr_t)0xc0;
+    CUstream other = (CUstream)(uintptr_t)0xc1;
+
+    reset_mocks();
+    assert(push_record(stream, NULL) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    void *graph = pop_graph(RECORD_OK);
+
+    assert(push_record(other, graph) == RECORD_UNSUPPORTED);
+    assert(strstr(record_last_error(), "stream or CUDA context changed"));
+    assert(push_record(stream, graph) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    assert(pop_graph(RECORD_OK) == graph);
+    destroy_graph(graph);
+}
+
+static void test_nested_record_cannot_select_graph(void) {
+    CUstream stream = (CUstream)(uintptr_t)0xd0;
+
+    reset_mocks();
+    assert(push_record(stream, NULL) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    assert(push_record(stream, (void *)(uintptr_t)1) == RECORD_INVALID_STATE);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
+}
+
+static void test_outer_pop_requires_graph_output(void) {
+    CUstream stream = (CUstream)(uintptr_t)0xe0;
+
+    reset_mocks();
+    assert(push_record(stream, NULL) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    assert(pop(NULL) == RECORD_INVALID_STATE);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
+}
+
 int main(void) {
     test_record_replay_and_page_alias();
     test_nested_record_replay();
@@ -427,6 +493,10 @@ int main(void) {
     test_sync_failure_keeps_mappings_for_retry();
     test_teardown_failure_is_retryable();
     test_context_change_does_not_teardown();
+    test_resumed_graph_mismatch_can_be_destroyed();
+    test_resumed_graph_requires_same_stream();
+    test_nested_record_cannot_select_graph();
+    test_outer_pop_requires_graph_output();
     puts("loop-record tests passed");
     return 0;
 }
