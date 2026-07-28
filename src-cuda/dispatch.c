@@ -7,7 +7,6 @@
 #endif
 
 static void *g_cuda_module;
-static void *g_cudart_module;
 
 AimdoCudaDispatch g_cuda;
 
@@ -72,43 +71,6 @@ static const char *const cuda_library_names[] = {
 #endif
 };
 
-static const char *const cudart_library_names[] = {
-#if defined(_WIN32) || defined(_WIN64)
-    "cudart64_130.dll",
-    "cudart64_12.dll",
-    "cudart64_110.dll",
-#else
-    "libcudart.so.13",
-    "libcudart.so.12",
-    "libcudart.so.11.0",
-#endif
-};
-
-static void *resolve_module_symbol(void *module, const char *symbol) {
-#if defined(_WIN32) || defined(_WIN64)
-    return (void *)GetProcAddress((HMODULE)module, symbol);
-#else
-    return dlsym(module, symbol);
-#endif
-}
-
-static void resolve_cudart_hooks(void) {
-    if (!(g_cudart_module = aimdo_find_loaded_module(
-              cudart_library_names, ARRAY_SIZE(cudart_library_names)))) {
-        log(WARNING, "%s: CUDA runtime allocation hooks are unavailable\n", __func__);
-        return;
-    }
-
-    g_cuda.p_cudaMallocAsync = (PFN_cudaMallocAsync)resolve_module_symbol(g_cudart_module,
-                                                                          "cudaMallocAsync");
-    g_cuda.p_cudaMallocAsync_ptsz = (PFN_cudaMallocAsync)resolve_module_symbol(g_cudart_module,
-                                                                               "cudaMallocAsync_ptsz");
-    g_cuda.p_cudaFreeAsync = (PFN_cudaFreeAsync)resolve_module_symbol(g_cudart_module,
-                                                                      "cudaFreeAsync");
-    g_cuda.p_cudaFreeAsync_ptsz = (PFN_cudaFreeAsync)resolve_module_symbol(g_cudart_module,
-                                                                           "cudaFreeAsync_ptsz");
-}
-
 bool aimdo_cuda_runtime_init(void) {
     if (g_cuda.p_cuInit) {
         return true;
@@ -155,7 +117,6 @@ bool aimdo_cuda_runtime_init(void) {
         return false;
     }
 
-    resolve_cudart_hooks();
     return true;
 }
 
@@ -168,10 +129,6 @@ void aimdo_cuda_runtime_cleanup(void) {
 
 #if !defined(_WIN32) && !defined(_WIN64)
     dlclose(g_cuda_module);
-    if (g_cudart_module) {
-        dlclose(g_cudart_module);
-    }
 #endif
     g_cuda_module = NULL;
-    g_cudart_module = NULL;
 }

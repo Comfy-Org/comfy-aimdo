@@ -24,9 +24,6 @@ typedef CUresult (CUDAAPI *PFN_cuMemFree_v2)(CUdeviceptr dptr);
 typedef CUresult (CUDAAPI *PFN_cuMemAllocAsync)(CUdeviceptr *dptr, size_t bytesize,
                                                 CUstream hStream);
 typedef CUresult (CUDAAPI *PFN_cuMemFreeAsync)(CUdeviceptr dptr, CUstream hStream);
-typedef CUresult (CUDAAPI *PFN_cudaMallocAsync)(void **devPtr, size_t size,
-                                                CUstream hStream);
-typedef CUresult (CUDAAPI *PFN_cudaFreeAsync)(void *devPtr, CUstream hStream);
 typedef CUresult (CUDAAPI *PFN_cuMemAllocHost)(void **pp, size_t bytesize);
 typedef CUresult (CUDAAPI *PFN_cuMemFreeHost)(void *p);
 typedef CUresult (CUDAAPI *PFN_cuMemHostRegister)(void *p, size_t bytesize,
@@ -74,10 +71,6 @@ typedef struct AimdoCudaDispatch {
     PFN_cuMemAllocAsync p_cuMemAllocAsync_ptsz;
     PFN_cuMemFreeAsync p_cuMemFreeAsync;
     PFN_cuMemFreeAsync p_cuMemFreeAsync_ptsz;
-    PFN_cudaMallocAsync p_cudaMallocAsync;
-    PFN_cudaMallocAsync p_cudaMallocAsync_ptsz;
-    PFN_cudaFreeAsync p_cudaFreeAsync;
-    PFN_cudaFreeAsync p_cudaFreeAsync_ptsz;
     PFN_cuMemAllocHost p_cuMemAllocHost;
     PFN_cuMemFreeHost p_cuMemFreeHost;
     PFN_cuMemHostRegister p_cuMemHostRegister;

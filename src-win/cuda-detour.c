@@ -37,16 +37,7 @@ bool aimdo_setup_hooks() {
 
     log(INFO, "%s: installing %zu hooks\n", __func__, sizeof(hooks) / sizeof(HookEntry));
 
-    if (!install_hook_entries((HookEntry *)hooks, ARRAY_SIZE(hooks))) {
-        return false;
-    }
-#if !defined(__HIP_PLATFORM_AMD__)
-    if (!install_hook_entries((HookEntry *)runtime_hooks, ARRAY_SIZE(runtime_hooks))) {
-        aimdo_teardown_hooks();
-        return false;
-    }
-#endif
-    return true;
+    return install_hook_entries((HookEntry *)hooks, sizeof(hooks) / sizeof(hooks[0]));
 }
 
 void aimdo_teardown_hooks() {
@@ -61,13 +52,6 @@ void aimdo_teardown_hooks() {
             DetourDetach(hooks[i].true_ptr, hooks[i].hook_ptr);
         }
     }
-#if !defined(__HIP_PLATFORM_AMD__)
-    for (size_t i = 0; i < ARRAY_SIZE(runtime_hooks); i++) {
-        if (*runtime_hooks[i].true_ptr) {
-            DetourDetach(runtime_hooks[i].true_ptr, runtime_hooks[i].hook_ptr);
-        }
-    }
-#endif
 
     status = (int)DetourTransactionCommit();
     if (status != 0) {

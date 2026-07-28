@@ -134,7 +134,6 @@ def test_torch_allocator(stream):
     control.push_record(stream)
     for iteration in range(8):
         control.iterate()
-        torch.cuda.nvtx.range_push(f"torch-iteration-{iteration}")
         value = torch.empty(M, dtype=torch.uint8, device="cuda")
         value.fill_(iteration)
         ptr = value.data_ptr()
@@ -143,7 +142,6 @@ def test_torch_allocator(stream):
             recorded_pointer = ptr
         else:
             assert ptr == recorded_pointer
-        torch.cuda.nvtx.range_pop()
     control.pop()
     print(f"PyTorch cudaMallocAsync replay: {recorded_pointer:#x}")
 
