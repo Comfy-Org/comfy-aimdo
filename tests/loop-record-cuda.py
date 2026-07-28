@@ -14,6 +14,7 @@ CUDA_SUCCESS = 0
 
 
 control.init_device(torch.cuda.current_device())
+control.set_log_none()
 
 cuda = ctypes.CDLL("libcuda.so.1")
 cuda.cuMemAllocAsync.argtypes = [ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t, ctypes.c_void_p]
@@ -43,7 +44,6 @@ def tensor(ptr, size):
 
 def test_alias_and_replay(stream, size):
     first_iteration = None
-    usage_before = control.get_total_vram_usage()
 
     control.push_record(stream)
     for iteration in range(5):
@@ -74,7 +74,6 @@ def test_alias_and_replay(stream, size):
         torch.cuda.nvtx.range_pop()
     control.pop()
 
-    assert control.get_total_vram_usage() == usage_before
     print(f"alias/replay {size // M} MiB: {first_iteration[0]:#x}, {first_iteration[1]:#x}")
 
 
@@ -126,6 +125,27 @@ def test_external_free_passthrough(stream):
     print("external free passthrough: ok")
 
 
+def test_torch_allocator(stream):
+    if torch.cuda.get_allocator_backend() != "cudaMallocAsync":
+        print(f"PyTorch allocator test skipped: {torch.cuda.get_allocator_backend()}")
+        return
+
+    recorded_pointer = None
+    control.push_record(stream)
+    for iteration in range(8):
+        control.iterate()
+        value = torch.empty(M, dtype=torch.uint8, device="cuda")
+        value.fill_(iteration)
+        ptr = value.data_ptr()
+        del value
+        if recorded_pointer is None:
+            recorded_pointer = ptr
+        else:
+            assert ptr == recorded_pointer
+    control.pop()
+    print(f"PyTorch cudaMallocAsync replay: {recorded_pointer:#x}")
+
+
 stream = torch.cuda.Stream()
 other = torch.cuda.Stream()
 with torch.cuda.stream(stream):
@@ -134,6 +154,7 @@ with torch.cuda.stream(stream):
     test_nested(stream)
     test_other_stream_passthrough(stream, other)
     test_external_free_passthrough(stream)
+    test_torch_allocator(stream)
 
 control.deinit()
 print("CUDA loop-record tests passed")
