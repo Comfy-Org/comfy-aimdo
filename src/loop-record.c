@@ -77,6 +77,7 @@ typedef struct RecordFrame {
 
 static _Thread_local RecordFrame *g_record_frame;
 static _Thread_local char g_record_error[256];
+static _Thread_local unsigned int g_record_suspended;
 
 static int record_error(RecordRoot *root, int status, const char *format, ...) {
     va_list args;
@@ -434,6 +435,18 @@ int iterate(void) {
 }
 
 SHARED_EXPORT
+void suspend_record(void) {
+    g_record_suspended++;
+}
+
+SHARED_EXPORT
+void resume_record(void) {
+    if (g_record_suspended) {
+        g_record_suspended--;
+    }
+}
+
+SHARED_EXPORT
 int pop(void **graph) {
     RecordFrame *frame = g_record_frame;
     RecordRoot *root;
@@ -529,7 +542,7 @@ bool record_malloc_async(CUdeviceptr *dev_ptr, size_t size, CUstream stream,
     RecordAllocation *allocation;
     RecordEvent *event;
 
-    if (!frame || frame->root->stream != stream) {
+    if (!frame || g_record_suspended || frame->root->stream != stream) {
         return false;
     }
     root = frame->root;

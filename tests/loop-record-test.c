@@ -289,6 +289,21 @@ static void test_other_stream_is_not_recorded(void) {
     assert(g_reserve_calls == 0);
 }
 
+static void test_suspended_allocation_is_not_recorded(void) {
+    CUstream stream = (CUstream)(uintptr_t)0x35;
+    CUdeviceptr ptr = 0;
+    CUresult status = CUDA_SUCCESS;
+
+    reset_mocks();
+    assert(push_record(stream, NULL) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    suspend_record();
+    assert(!record_malloc_async(&ptr, M, stream, &status));
+    resume_record();
+    destroy_graph(pop_graph(RECORD_OK));
+    assert(g_reserve_calls == 0);
+}
+
 static void test_mismatch_is_sticky(void) {
     CUstream stream = (CUstream)(uintptr_t)0x40;
     CUdeviceptr ptr;
@@ -490,6 +505,7 @@ int main(void) {
     test_record_replay_and_page_alias();
     test_nested_record_replay();
     test_other_stream_is_not_recorded();
+    test_suspended_allocation_is_not_recorded();
     test_mismatch_is_sticky();
     test_compiled_pointer_cannot_leave_stream();
     test_live_allocation_rejects_iteration();

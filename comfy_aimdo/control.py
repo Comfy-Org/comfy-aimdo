@@ -4,6 +4,7 @@ import platform
 from pathlib import Path
 import logging
 import importlib.util
+import contextlib
 
 lib = None
 devctxs = []
@@ -88,6 +89,10 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.push_record.restype = ctypes.c_int
     lib.iterate.argtypes = []
     lib.iterate.restype = ctypes.c_int
+    lib.suspend_record.argtypes = []
+    lib.suspend_record.restype = None
+    lib.resume_record.argtypes = []
+    lib.resume_record.restype = None
     lib.pop.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     lib.pop.restype = ctypes.c_int
     lib.destroy_record.argtypes = [ctypes.c_void_p]
@@ -198,6 +203,18 @@ def push_record(stream, graph=None):
 
 def iterate():
     _record_call("iterate")
+
+
+@contextlib.contextmanager
+def suspend_recording():
+    if lib is None:
+        yield
+        return
+    lib.suspend_record()
+    try:
+        yield
+    finally:
+        lib.resume_record()
 
 
 def pop():
