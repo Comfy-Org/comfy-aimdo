@@ -53,3 +53,55 @@ static const HookEntry hooks[] = {
     { (void **)&true_cuMemFreeAsync,       (void **)&g_cuda.p_cuMemFreeAsync,       aimdo_cuMemFreeAsync,       "cuMemFreeAsync" },
     { (void **)&true_cuMemFreeAsync_ptsz,  (void **)&g_cuda.p_cuMemFreeAsync_ptsz,  aimdo_cuMemFreeAsync_ptsz,  "cuMemFreeAsync_ptsz" },
 };
+
+#if !defined(__HIP_PLATFORM_AMD__)
+static PFN_cudaMallocAsync true_cudaMallocAsync;
+static PFN_cudaMallocAsync true_cudaMallocAsync_ptsz;
+static PFN_cudaFreeAsync true_cudaFreeAsync;
+static PFN_cudaFreeAsync true_cudaFreeAsync_ptsz;
+
+static CUresult CUDAAPI true_cudaMallocAsync_adapter(CUdeviceptr *dptr, size_t size,
+                                                      CUstream stream) {
+    return true_cudaMallocAsync((void **)dptr, size, stream);
+}
+
+static CUresult CUDAAPI true_cudaMallocAsync_ptsz_adapter(CUdeviceptr *dptr, size_t size,
+                                                           CUstream stream) {
+    return true_cudaMallocAsync_ptsz((void **)dptr, size, stream);
+}
+
+static CUresult CUDAAPI true_cudaFreeAsync_adapter(CUdeviceptr dptr, CUstream stream) {
+    return true_cudaFreeAsync((void *)(uintptr_t)dptr, stream);
+}
+
+static CUresult CUDAAPI true_cudaFreeAsync_ptsz_adapter(CUdeviceptr dptr, CUstream stream) {
+    return true_cudaFreeAsync_ptsz((void *)(uintptr_t)dptr, stream);
+}
+
+static CUresult CUDAAPI aimdo_cudaMallocAsync(void **dptr, size_t size, CUstream stream) {
+    return aimdo_cuda_malloc_async((CUdeviceptr *)dptr, size, stream,
+                                   true_cudaMallocAsync_adapter);
+}
+
+static CUresult CUDAAPI aimdo_cudaMallocAsync_ptsz(void **dptr, size_t size, CUstream stream) {
+    return aimdo_cuda_malloc_async((CUdeviceptr *)dptr, size, stream,
+                                   true_cudaMallocAsync_ptsz_adapter);
+}
+
+static CUresult CUDAAPI aimdo_cudaFreeAsync(void *dptr, CUstream stream) {
+    return aimdo_cuda_free_async((CUdeviceptr)(uintptr_t)dptr, stream,
+                                 true_cudaFreeAsync_adapter);
+}
+
+static CUresult CUDAAPI aimdo_cudaFreeAsync_ptsz(void *dptr, CUstream stream) {
+    return aimdo_cuda_free_async((CUdeviceptr)(uintptr_t)dptr, stream,
+                                 true_cudaFreeAsync_ptsz_adapter);
+}
+
+static const HookEntry runtime_hooks[] = {
+    { (void **)&true_cudaMallocAsync,      (void **)&g_cuda.p_cudaMallocAsync,      aimdo_cudaMallocAsync,      "cudaMallocAsync" },
+    { (void **)&true_cudaMallocAsync_ptsz, (void **)&g_cuda.p_cudaMallocAsync_ptsz, aimdo_cudaMallocAsync_ptsz, "cudaMallocAsync_ptsz" },
+    { (void **)&true_cudaFreeAsync,        (void **)&g_cuda.p_cudaFreeAsync,        aimdo_cudaFreeAsync,        "cudaFreeAsync" },
+    { (void **)&true_cudaFreeAsync_ptsz,   (void **)&g_cuda.p_cudaFreeAsync_ptsz,   aimdo_cudaFreeAsync_ptsz,   "cudaFreeAsync_ptsz" },
+};
+#endif

@@ -8,6 +8,28 @@ static funchook_t *funchook_state;
 
 #include "cuda-hooks-shared.h"
 
+static bool prepare_hook_entries(const HookEntry *entries, size_t count) {
+    int status;
+
+    for (size_t i = 0; i < count; i++) {
+        const char *detail;
+
+        if (!*entries[i].target_ptr) {
+            continue;
+        }
+
+        *entries[i].true_ptr = *entries[i].target_ptr;
+        status = funchook_prepare(funchook_state, entries[i].true_ptr, entries[i].hook_ptr);
+        if (status != FUNCHOOK_ERROR_SUCCESS) {
+            detail = funchook_error_message(funchook_state);
+            log(ERROR, "%s: funchook_prepare(%s) failed: %d %s\n", __func__, entries[i].name,
+                status, detail ? detail : "<unknown funchook error>");
+            return false;
+        }
+    }
+    return true;
+}
+
 bool aimdo_setup_hooks(void) {
     int status;
 
@@ -22,23 +44,14 @@ bool aimdo_setup_hooks(void) {
         return false;
     }
 
-    for (size_t i = 0; i < sizeof(hooks) / sizeof(hooks[0]); i++) {
-        const char *detail;
-
-        if (!*hooks[i].target_ptr) {
-            log(ERROR, "%s: failed to resolve %s\n", __func__, hooks[i].name);
-            goto fail_teardown;
-        }
-
-        *hooks[i].true_ptr = *hooks[i].target_ptr;
-        status = funchook_prepare(funchook_state, hooks[i].true_ptr, hooks[i].hook_ptr);
-        if (status != FUNCHOOK_ERROR_SUCCESS) {
-            detail = funchook_error_message(funchook_state);
-            log(ERROR, "%s: funchook_prepare(%s) failed: %d %s\n", __func__, hooks[i].name,
-                status, detail ? detail : "<unknown funchook error>");
-            goto fail_teardown;
-        }
+    if (!prepare_hook_entries(hooks, ARRAY_SIZE(hooks))) {
+        goto fail_teardown;
     }
+#if !defined(__HIP_PLATFORM_AMD__)
+    if (!prepare_hook_entries(runtime_hooks, ARRAY_SIZE(runtime_hooks))) {
+        goto fail_teardown;
+    }
+#endif
 
     status = funchook_install(funchook_state, 0);
     if (status != FUNCHOOK_ERROR_SUCCESS) {
