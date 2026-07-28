@@ -36,6 +36,7 @@ typedef struct RecordAllocation {
     bool address_freed;
     struct RecordFrame *frame;
     struct RecordAllocation *next;
+    struct RecordAllocation *hash_next;
 } RecordAllocation;
 
 typedef struct RecordEvent {
@@ -53,6 +54,7 @@ typedef struct RecordRoot {
     RecordPage *pages;
     RecordPage *free_pages;
     RecordAllocation *allocations;
+    RecordAllocation *allocation_table[SIZE_HASH_SIZE];
     bool poisoned;
     bool draining;
     bool active;
@@ -198,11 +200,15 @@ static bool map_page(RecordRoot *root, CUdeviceptr ptr, RecordPage *page, bool *
     return true;
 }
 
+static unsigned int allocation_hash(CUdeviceptr ptr) {
+    return ((uintptr_t)ptr >> 10 ^ (uintptr_t)ptr >> 21) % SIZE_HASH_SIZE;
+}
+
 static RecordAllocation *find_allocation(RecordRoot *root, CUdeviceptr ptr) {
-    RecordAllocation *allocation = root->allocations;
+    RecordAllocation *allocation = root->allocation_table[allocation_hash(ptr)];
 
     while (allocation && allocation->ptr != ptr) {
-        allocation = allocation->next;
+        allocation = allocation->hash_next;
     }
     return allocation;
 }
@@ -583,6 +589,8 @@ bool record_malloc_async(CUdeviceptr *dev_ptr, size_t size, CUstream stream,
     }
     allocation->next = root->allocations;
     root->allocations = allocation;
+    allocation->hash_next = root->allocation_table[allocation_hash(allocation->ptr)];
+    root->allocation_table[allocation_hash(allocation->ptr)] = allocation;
 
     for (size_t i = 0; i < allocation->page_count; i++) {
         RecordPage *page = root->free_pages;
