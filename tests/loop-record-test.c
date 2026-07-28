@@ -177,6 +177,18 @@ static void recorded_free(CUdeviceptr ptr, CUstream stream) {
     assert(status == CUDA_SUCCESS);
 }
 
+static void *pop_graph(int expected_status) {
+    void *graph = NULL;
+
+    assert(pop(&graph) == expected_status);
+    return graph;
+}
+
+static void destroy_graph(void *graph) {
+    assert(graph);
+    assert(destroy_record(graph) == RECORD_OK);
+}
+
 static void test_record_replay_and_page_alias(void) {
     CUstream stream = (CUstream)(uintptr_t)0x10;
     CUdeviceptr first;
@@ -184,7 +196,7 @@ static void test_record_replay_and_page_alias(void) {
     size_t map_calls;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     first = recorded_malloc(M, stream);
     recorded_free(first, stream);
@@ -206,7 +218,21 @@ static void test_record_replay_and_page_alias(void) {
     assert(g_map_calls == map_calls);
     assert(g_create_calls == 1);
 
-    assert(pop() == RECORD_OK);
+    void *graph = pop_graph(RECORD_OK);
+    assert(graph);
+    assert(g_sync_calls == 0);
+    assert(g_unmap_calls == 0);
+    assert(g_release_calls == 0);
+
+    assert(push_record(stream, graph) == RECORD_OK);
+    assert(iterate() == RECORD_OK);
+    assert(recorded_malloc(M, stream) == first);
+    recorded_free(first, stream);
+    assert(recorded_malloc(M, stream) == second);
+    recorded_free(second, stream);
+    assert(pop_graph(RECORD_OK) == graph);
+
+    destroy_graph(graph);
     assert(g_sync_calls == 1);
     assert(g_unmap_calls == 2);
     assert(g_release_calls == 1);
@@ -216,13 +242,13 @@ static void test_record_replay_and_page_alias(void) {
 static void run_child(CUstream stream) {
     CUdeviceptr ptr;
 
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     for (int i = 0; i < 2; i++) {
         assert(iterate() == RECORD_OK);
         ptr = recorded_malloc(2 * M, stream);
         recorded_free(ptr, stream);
     }
-    assert(pop() == RECORD_OK);
+    assert(pop_graph(RECORD_OK) == NULL);
 }
 
 static void test_nested_record_replay(void) {
@@ -230,7 +256,7 @@ static void test_nested_record_replay(void) {
     size_t map_calls;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     run_child(stream);
     map_calls = g_map_calls;
@@ -238,7 +264,7 @@ static void test_nested_record_replay(void) {
     assert(iterate() == RECORD_OK);
     run_child(stream);
     assert(g_map_calls == map_calls);
-    assert(pop() == RECORD_OK);
+    destroy_graph(pop_graph(RECORD_OK));
 }
 
 static void test_other_stream_is_not_recorded(void) {
@@ -248,10 +274,10 @@ static void test_other_stream_is_not_recorded(void) {
     CUresult status = CUDA_SUCCESS;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     assert(!record_malloc_async(&ptr, M, other, &status));
-    assert(pop() == RECORD_OK);
+    destroy_graph(pop_graph(RECORD_OK));
     assert(g_reserve_calls == 0);
 }
 
@@ -261,7 +287,7 @@ static void test_mismatch_is_sticky(void) {
     CUresult status;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     recorded_free(ptr, stream);
@@ -272,7 +298,7 @@ static void test_mismatch_is_sticky(void) {
     assert(record_malloc_async(&ptr, 2 * M, stream, &status));
     assert(status == CUDA_ERROR_INVALID_VALUE);
     assert(ptr == 0);
-    assert(pop() == RECORD_MISMATCH);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
     assert(strstr(record_last_error(), "allocation size changed"));
 }
 
@@ -283,12 +309,12 @@ static void test_compiled_pointer_cannot_leave_stream(void) {
     CUresult status = CUDA_SUCCESS;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     assert(record_free(ptr, other, true, &status));
     assert(status == CUDA_ERROR_INVALID_VALUE);
-    assert(pop() == RECORD_MISMATCH);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
     assert(strstr(record_last_error(), "outside its record stream"));
 }
 
@@ -296,11 +322,11 @@ static void test_live_allocation_rejects_iteration(void) {
     CUstream stream = (CUstream)(uintptr_t)0x60;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     recorded_malloc(M, stream);
     assert(iterate() == RECORD_MISMATCH);
-    assert(pop() == RECORD_MISMATCH);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
     assert(strstr(record_last_error(), "allocations remain live"));
     assert(g_sync_calls == 1);
 }
@@ -310,18 +336,18 @@ static void test_child_iteration_count_must_match(void) {
     CUdeviceptr ptr;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     run_child(stream);
     assert(iterate() == RECORD_OK);
 
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(2 * M, stream);
     recorded_free(ptr, stream);
-    assert(pop() == RECORD_MISMATCH);
+    assert(pop_graph(RECORD_MISMATCH) == NULL);
     assert(strstr(record_last_error(), "expected 2 iterations"));
-    assert(pop() == RECORD_MISMATCH);
+    destroy_graph(pop_graph(RECORD_MISMATCH));
 }
 
 static void test_sync_failure_keeps_mappings_for_retry(void) {
@@ -329,19 +355,20 @@ static void test_sync_failure_keeps_mappings_for_retry(void) {
     CUdeviceptr ptr;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     recorded_free(ptr, stream);
 
+    void *graph = pop_graph(RECORD_OK);
     g_sync_status = CUDA_ERROR_INVALID_VALUE;
-    assert(pop() == RECORD_CUDA_FAILURE);
+    assert(destroy_record(graph) == RECORD_CUDA_FAILURE);
     assert(g_unmap_calls == 0);
     assert(g_release_calls == 0);
-    assert(strstr(record_last_error(), "pop may be retried"));
+    assert(strstr(record_last_error(), "destruction may be retried"));
 
     g_sync_status = CUDA_SUCCESS;
-    assert(pop() == RECORD_OK);
+    assert(destroy_record(graph) == RECORD_OK);
     assert(g_unmap_calls == 1);
     assert(g_release_calls == 1);
 }
@@ -351,19 +378,20 @@ static void test_teardown_failure_is_retryable(void) {
     CUdeviceptr ptr;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     recorded_free(ptr, stream);
 
+    void *graph = pop_graph(RECORD_OK);
     g_unmap_status = CUDA_ERROR_INVALID_VALUE;
-    assert(pop() == RECORD_CUDA_FAILURE);
+    assert(destroy_record(graph) == RECORD_CUDA_FAILURE);
     assert(g_release_calls == 0);
     assert(g_address_free_calls == 0);
     assert(strstr(record_last_error(), "cuMemUnmap failed"));
 
     g_unmap_status = CUDA_SUCCESS;
-    assert(pop() == RECORD_OK);
+    assert(destroy_record(graph) == RECORD_OK);
     assert(g_release_calls == 1);
     assert(g_address_free_calls == 1);
 }
@@ -374,18 +402,18 @@ static void test_context_change_does_not_teardown(void) {
     CUdeviceptr ptr;
 
     reset_mocks();
-    assert(push_record(stream) == RECORD_OK);
+    assert(push_record(stream, NULL) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = recorded_malloc(M, stream);
     recorded_free(ptr, stream);
 
     g_current_context = (CUcontext)(uintptr_t)0x5678;
-    assert(pop() == RECORD_UNSUPPORTED);
+    assert(pop_graph(RECORD_UNSUPPORTED) == NULL);
     assert(g_sync_calls == 0);
     assert(g_unmap_calls == 0);
 
     g_current_context = original_context;
-    assert(pop() == RECORD_OK);
+    destroy_graph(pop_graph(RECORD_OK));
 }
 
 int main(void) {

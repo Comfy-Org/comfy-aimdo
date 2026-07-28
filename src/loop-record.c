@@ -55,6 +55,7 @@ typedef struct RecordRoot {
     RecordAllocation *allocations;
     bool poisoned;
     bool draining;
+    bool active;
     char error[256];
 } RecordRoot;
 
@@ -313,36 +314,54 @@ static int finish_iteration(RecordFrame *frame) {
 }
 
 SHARED_EXPORT
-int push_record(CUstream stream) {
+int push_record(CUstream stream, void *graph) {
     RecordFrame *frame;
     RecordRoot *root;
 
     g_record_error[0] = '\0';
     if (!g_record_frame) {
-        if (!stream) {
-            return record_error(NULL, RECORD_UNSUPPORTED,
-                                "the legacy and per-thread default streams are not supported");
-        }
         if (!set_devctx_for_current_cuda_device()) {
             return record_error(NULL, RECORD_INVALID_STATE, "no initialized CUDA device is current");
         }
-        root = calloc(1, sizeof(*root));
-        frame = calloc(1, sizeof(*frame));
-        if (!root || !frame) {
-            free(root);
-            free(frame);
-            return record_error(NULL, RECORD_OUT_OF_MEMORY, "could not create allocation record");
+        if (graph) {
+            frame = graph;
+            root = frame->root;
+            if (frame->parent || root->active || root->draining) {
+                return record_error(NULL, RECORD_INVALID_STATE, "allocation graph is not available");
+            }
+            if (root->stream != stream || root->devctx != g_devctx ||
+                !record_context_matches(root)) {
+                return record_error(NULL, RECORD_UNSUPPORTED,
+                                    "allocation graph stream or CUDA context changed");
+            }
+            if (root->poisoned) {
+                return record_error(NULL, RECORD_MISMATCH, "allocation graph is poisoned");
+            }
+        } else {
+            root = calloc(1, sizeof(*root));
+            frame = calloc(1, sizeof(*frame));
+            if (!root || !frame) {
+                free(root);
+                free(frame);
+                return record_error(NULL, RECORD_OUT_OF_MEMORY, "could not create allocation record");
+            }
+            root->devctx = g_devctx;
+            if (cuCtxGetCurrent(&root->context) != CUDA_SUCCESS || !root->context) {
+                free(root);
+                free(frame);
+                return record_error(NULL, RECORD_INVALID_STATE, "no CUDA context is current");
+            }
+            root->stream = stream;
+            frame->root = root;
         }
-        root->devctx = g_devctx;
-        if (cuCtxGetCurrent(&root->context) != CUDA_SUCCESS || !root->context) {
-            free(root);
-            free(frame);
-            return record_error(NULL, RECORD_INVALID_STATE, "no CUDA context is current");
-        }
-        root->stream = stream;
-        frame->root = root;
+        root->active = true;
         g_record_frame = frame;
         return RECORD_OK;
+    }
+
+    if (graph) {
+        return record_error(g_record_frame->root, RECORD_INVALID_STATE,
+                            "nested allocation record cannot select a graph");
     }
 
     if (g_record_frame->root->stream != stream) {
@@ -409,11 +428,14 @@ int iterate(void) {
 }
 
 SHARED_EXPORT
-int pop(void) {
+int pop(void **graph) {
     RecordFrame *frame = g_record_frame;
     RecordRoot *root;
     int status;
 
+    if (graph) {
+        *graph = NULL;
+    }
     if (!frame) {
         return record_error(NULL, RECORD_INVALID_STATE, "no allocation record is active");
     }
@@ -448,23 +470,42 @@ int pop(void) {
         return status;
     }
 
-    if (cuStreamSynchronize(root->stream) != CUDA_SUCCESS) {
-        root->draining = true;
-        snprintf(root->error, sizeof(root->error),
-                 "could not synchronize the allocation record stream; pop may be retried");
-        return RECORD_CUDA_FAILURE;
-    }
     g_record_frame = NULL;
+    root->active = false;
+    if (graph) {
+        *graph = frame;
+    }
     if (root->error[0]) {
         snprintf(g_record_error, sizeof(g_record_error), "%s", root->error);
     }
+    return status;
+}
+
+SHARED_EXPORT
+int destroy_record(void *graph) {
+    RecordFrame *frame = graph;
+    RecordRoot *root;
+
+    if (!frame || frame->parent || frame->root->active) {
+        return record_error(NULL, RECORD_INVALID_STATE, "allocation graph is not available for destruction");
+    }
+    root = frame->root;
+    if (!record_context_matches(root)) {
+        return record_error(NULL, RECORD_UNSUPPORTED,
+                            "allocation graph CUDA context changed");
+    }
+    if (cuStreamSynchronize(root->stream) != CUDA_SUCCESS) {
+        snprintf(g_record_error, sizeof(g_record_error),
+                 "could not synchronize the allocation graph stream; destruction may be retried");
+        return RECORD_CUDA_FAILURE;
+    }
     if (!release_root(root)) {
         root->draining = true;
-        g_record_frame = frame;
+        snprintf(g_record_error, sizeof(g_record_error), "%s", root->error);
         return RECORD_CUDA_FAILURE;
     }
     release_frame(frame);
-    return status;
+    return RECORD_OK;
 }
 
 SHARED_EXPORT

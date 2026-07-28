@@ -246,11 +246,13 @@ void aimdo_analyze(void *devctx);
 
 /* loop-record.c */
 SHARED_EXPORT
-int push_record(CUstream stream);
+int push_record(CUstream stream, void *graph);
 SHARED_EXPORT
 int iterate(void);
 SHARED_EXPORT
-int pop(void);
+int pop(void **graph);
+SHARED_EXPORT
+int destroy_record(void *graph);
 SHARED_EXPORT
 const char *record_last_error(void);
 bool record_malloc_async(CUdeviceptr *dev_ptr, size_t size, CUstream stream,

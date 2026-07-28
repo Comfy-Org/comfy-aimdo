@@ -84,12 +84,14 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
 
-    lib.push_record.argtypes = [ctypes.c_void_p]
+    lib.push_record.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     lib.push_record.restype = ctypes.c_int
     lib.iterate.argtypes = []
     lib.iterate.restype = ctypes.c_int
-    lib.pop.argtypes = []
+    lib.pop.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     lib.pop.restype = ctypes.c_int
+    lib.destroy_record.argtypes = [ctypes.c_void_p]
+    lib.destroy_record.restype = ctypes.c_int
     lib.record_last_error.argtypes = []
     lib.record_last_error.restype = ctypes.c_char_p
 
@@ -188,9 +190,10 @@ def _record_call(name, *args):
         raise RuntimeError(error.decode() if error else f"allocation record failed ({status})")
 
 
-def push_record(stream):
+def push_record(stream, graph=None):
     stream_ptr = stream if isinstance(stream, int) else stream.cuda_stream
-    _record_call("push_record", ctypes.c_void_p(stream_ptr))
+    graph_ptr = graph if isinstance(graph, int) else graph.value if graph is not None else None
+    _record_call("push_record", ctypes.c_void_p(stream_ptr), ctypes.c_void_p(graph_ptr))
 
 
 def iterate():
@@ -198,4 +201,11 @@ def iterate():
 
 
 def pop():
-    _record_call("pop")
+    graph = ctypes.c_void_p()
+    _record_call("pop", ctypes.byref(graph))
+    return graph.value
+
+
+def destroy_record(graph):
+    graph_ptr = graph if isinstance(graph, int) else graph.value
+    _record_call("destroy_record", ctypes.c_void_p(graph_ptr))
