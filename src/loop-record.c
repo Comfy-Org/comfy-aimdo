@@ -547,11 +547,11 @@ bool record_malloc_async(CUdeviceptr *dev_ptr, size_t size, CUstream stream,
             return true;
         }
         allocation = event->item.allocation;
-        if (allocation->size != size || allocation->live) {
+        if (size > allocation->mapped_size || allocation->live) {
             record_error(root, RECORD_MISMATCH,
-                         "depth %zu iteration %zu event %zu: allocation size changed from %zu to %zu",
+                         "depth %zu iteration %zu event %zu: allocation size %zu exceeds recorded capacity %zu",
                          record_depth(frame), frame->iteration, frame->cursor - 1,
-                         allocation->size, size);
+                         size, allocation->mapped_size);
             return true;
         }
         allocation->live = true;

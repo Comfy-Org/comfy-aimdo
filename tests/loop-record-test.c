@@ -301,13 +301,17 @@ static void test_mismatch_is_sticky(void) {
     recorded_free(ptr, stream);
     assert(iterate() == RECORD_OK);
 
+    ptr = recorded_malloc(M / 2, stream);
+    recorded_free(ptr, stream);
+    assert(iterate() == RECORD_OK);
+
     ptr = 1;
     status = CUDA_SUCCESS;
-    assert(record_malloc_async(&ptr, 2 * M, stream, &status));
+    assert(record_malloc_async(&ptr, 3 * M, stream, &status));
     assert(status == CUDA_ERROR_INVALID_VALUE);
     assert(ptr == 0);
     destroy_graph(pop_graph(RECORD_MISMATCH));
-    assert(strstr(record_last_error(), "allocation size changed"));
+    assert(strstr(record_last_error(), "exceeds recorded capacity"));
 }
 
 static void test_compiled_pointer_cannot_leave_stream(void) {
@@ -439,7 +443,7 @@ static void test_resumed_graph_mismatch_can_be_destroyed(void) {
     assert(push_record(stream, graph) == RECORD_OK);
     assert(iterate() == RECORD_OK);
     ptr = 0;
-    assert(record_malloc_async(&ptr, 2 * M, stream, &status));
+    assert(record_malloc_async(&ptr, 3 * M, stream, &status));
     assert(status == CUDA_ERROR_INVALID_VALUE);
     assert(pop_graph(RECORD_MISMATCH) == graph);
     destroy_graph(graph);
