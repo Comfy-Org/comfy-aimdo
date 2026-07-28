@@ -187,6 +187,7 @@ uint64_t get_total_vram_usage(void *devctx) {
 
 SHARED_EXPORT
 void cleanup(void) {
+    record_cleanup();
     for (size_t i = 0; i < g_all_devctx_count; i++) {
         set_devctx(&g_all_devctxs[i]);
         hostbuf_file_reader_cleanup();

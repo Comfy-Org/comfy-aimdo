@@ -33,6 +33,7 @@ typedef enum CUdevice_attribute_enum {
 
 typedef enum cudaError_enum {
     CUDA_SUCCESS = 0,
+    CUDA_ERROR_INVALID_VALUE = 1,
     CUDA_ERROR_OUT_OF_MEMORY = 2,
 } cudaError_enum;
 

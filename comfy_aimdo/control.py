@@ -84,6 +84,15 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
 
+    lib.push_record.argtypes = [ctypes.c_void_p]
+    lib.push_record.restype = ctypes.c_int
+    lib.iterate.argtypes = []
+    lib.iterate.restype = ctypes.c_int
+    lib.pop.argtypes = []
+    lib.pop.restype = ctypes.c_int
+    lib.record_last_error.argtypes = []
+    lib.record_last_error.restype = ctypes.c_char_p
+
     if simple_vram_headroom is not None:
         lib.set_simple_vram_headroom(int(simple_vram_headroom))
 
@@ -167,3 +176,26 @@ def get_total_vram_usage():
     if lib is None:
         return 0
     return sum(lib.get_total_vram_usage(devctx) for devctx in devctxs)
+
+
+def _record_call(name, *args):
+    if lib is None:
+        raise RuntimeError("comfy-aimdo is not initialized")
+    fn = getattr(lib, name)
+    status = fn(*args)
+    if status:
+        error = lib.record_last_error()
+        raise RuntimeError(error.decode() if error else f"allocation record failed ({status})")
+
+
+def push_record(stream):
+    stream_ptr = stream if isinstance(stream, int) else stream.cuda_stream
+    _record_call("push_record", ctypes.c_void_p(stream_ptr))
+
+
+def iterate():
+    _record_call("iterate")
+
+
+def pop():
+    _record_call("pop")

@@ -72,7 +72,9 @@ void *aimdo_find_loaded_module(const char *const *libraries, size_t library_coun
 #define cuInit                      g_cuda.p_cuInit
 #define cuGetErrorString            g_cuda.p_cuGetErrorString
 #define cuCtxGetDevice              g_cuda.p_cuCtxGetDevice
+#define cuCtxGetCurrent             g_cuda.p_cuCtxGetCurrent
 #define cuCtxSynchronize            g_cuda.p_cuCtxSynchronize
+#define cuStreamSynchronize         g_cuda.p_cuStreamSynchronize
 #define cuDeviceGet                 g_cuda.p_cuDeviceGet
 #define cuDeviceGetAttribute        g_cuda.p_cuDeviceGetAttribute
 #define cuDeviceTotalMem            g_cuda.p_cuDeviceTotalMem
@@ -241,3 +243,18 @@ void allocations_cleanup(void);
 void allocations_analyze(bool only_dirty);
 SHARED_EXPORT
 void aimdo_analyze(void *devctx);
+
+/* loop-record.c */
+SHARED_EXPORT
+int push_record(CUstream stream);
+SHARED_EXPORT
+int iterate(void);
+SHARED_EXPORT
+int pop(void);
+SHARED_EXPORT
+const char *record_last_error(void);
+bool record_malloc_async(CUdeviceptr *dev_ptr, size_t size, CUstream stream,
+                         CUresult *status);
+bool record_free(CUdeviceptr dev_ptr, CUstream stream, bool is_async,
+                 CUresult *status);
+void record_cleanup(void);

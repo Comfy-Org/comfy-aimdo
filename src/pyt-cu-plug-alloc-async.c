@@ -196,6 +196,9 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFree_v2(devPtr);
     }
+    if (record_free(devPtr, NULL, false, &status)) {
+        return status;
+    }
 
     status = true_cuMemFree_v2(devPtr);
     if (!CHECK_CU(status)) {
@@ -218,6 +221,9 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     }
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemAllocAsync(devPtr, size, hStream);
+    }
+    if (record_malloc_async(devPtr, size, hStream, &status)) {
+        return status;
     }
 
     vbars_free(budget_deficit(size));
@@ -257,6 +263,9 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     }
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFreeAsync(devPtr, hStream);
+    }
+    if (record_free(devPtr, hStream, true, &status)) {
+        return status;
     }
 
     status = true_cuMemFreeAsync(devPtr, hStream);

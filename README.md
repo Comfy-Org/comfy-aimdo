@@ -52,3 +52,21 @@ see examples/example.py
 ## Caveats:
 
 * There is no real way for this allocator to tell the difference between high usage and bad fragmentation in the pytorch caching allocator. As we always return success to the pytorch caching allocator it experiences no pressure while weights are being offloaded which means it can run in an extremely fragmented mode. The assumption is model weight access patterns are reasonably regular over blocks or iterations and it finds a good set of sizes to cache. What you should generally do though, is completely flush the pytorch caching allocator before each new model run, which avoids completely un-used reservations from taking priority over the next models weights.
+
+## Experimental loop allocation recording
+
+`push_record(stream)` starts a record bound to one CUDA stream. Call `iterate()` at the top of every loop iteration and `pop()` after the loop:
+
+```python
+stream = torch.cuda.Stream()
+with torch.cuda.stream(stream):
+    comfy_aimdo.control.push_record(stream)
+    for _ in range(steps):
+        comfy_aimdo.control.iterate()
+        run_step()
+    comfy_aimdo.control.pop()
+```
+
+The first iteration reserves a stable virtual address for each async allocation. Freed 2 MiB physical pages are mapped again at later virtual addresses without removing the old mappings. Later iterations only validate the allocation/free sequence and return the recorded addresses. Nested records inherit the outer stream and are part of the outer trace.
+
+Synchronous allocations and operations on other streams remain outside the record. Legacy and per-thread default streams are not supported; create and use an explicit non-default stream. A recorded pointer cannot be freed outside its record stream. Each frame must free all of its own allocations before the next `iterate()` or `pop()`; allocations may not escape a frame, and a child frame may not free a parent allocation. `pop()` synchronizes the selected stream before releasing the retained mappings.
