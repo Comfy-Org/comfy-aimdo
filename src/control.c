@@ -153,14 +153,24 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
     }
 #endif
 
+#if defined(__HIP_PLATFORM_AMD__)
     if (!CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
         return false;
     }
+#else
+    if (!aimdo_nvml_memory_info(nvml_device, &free_vram, &total_vram)) {
+        return false;
+    }
+#endif
     deficit_sync = (ssize_t)VRAM_HEADROOM - (ssize_t)free_vram;
     log(DEBUG,
-        "%s: cuMemGetInfo poll free=%zu MB total=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
+        "%s: device memory poll free=%zu MB total=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
         __func__, free_vram / M, total_vram / M, deficit_sync / (ssize_t)M, total_vram_usage / M);
+#if defined(__HIP_PLATFORM_AMD__)
     *prevailing_deficit_method = "cuMemGetInfo";
+#else
+    *prevailing_deficit_method = "NVML";
+#endif
     log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
     return true;
 }
@@ -173,9 +183,13 @@ void aimdo_analyze(void *devctx) {
 
     log(DEBUG, "--- VRAM Stats ---\n");
 
+#if defined(__HIP_PLATFORM_AMD__)
     CHECK_CU(cuMemGetInfo(&free_bytes, &total_bytes));
+#else
+    aimdo_nvml_memory_info(nvml_device, &free_bytes, &total_bytes);
+#endif
     log(DEBUG, "  Aimdo Recorded Usage:  %7zu MB\n", total_vram_usage / M);
-    log(DEBUG, "  Cuda:  %7zu MB / %7zu MB Free\n", free_bytes / M, total_bytes / M);
+    log(DEBUG, "  Device: %7zu MB / %7zu MB Free\n", free_bytes / M, total_bytes / M);
 
     vbars_analyze(devctx, true);
     allocations_analyze(true);
@@ -227,8 +241,7 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
 
         if (!allocations_init() ||
             !CHECK_CU(cuDeviceGet(&dev, cuda_device_ids[i])) ||
-            !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev)) ||
-            !aimdo_wddm_init(dev)) {
+            !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev))) {
             goto fail;
         }
 
@@ -240,6 +253,15 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
                 integrated_ram_headroom / M);
         }
 #endif
+
+#if !defined(__HIP_PLATFORM_AMD__)
+        if (!integrated_device && !aimdo_nvml_device_init(dev, &devctx->_nvml_device)) {
+            goto fail;
+        }
+#endif
+        if (!aimdo_wddm_init(dev)) {
+            goto fail;
+        }
 
         if (!CHECK_CU(cuDeviceGetName(dev_name, sizeof(dev_name), dev))) {
             sprintf(dev_name, "<unknown>");

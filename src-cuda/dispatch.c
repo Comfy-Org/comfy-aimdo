@@ -7,8 +7,30 @@
 #endif
 
 static void *g_cuda_module;
+static void *g_nvml_module;
 
 AimdoCudaDispatch g_cuda;
+
+typedef int nvmlReturn_t;
+typedef struct nvmlDevice_st *nvmlDevice_t;
+typedef struct {
+    unsigned long long total;
+    unsigned long long free;
+    unsigned long long used;
+} nvmlMemory_t;
+
+typedef nvmlReturn_t (*PFN_nvmlInit_v2)(void);
+typedef nvmlReturn_t (*PFN_nvmlShutdown)(void);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetHandleByUUID)(const char *uuid, nvmlDevice_t *device);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetMemoryInfo)(nvmlDevice_t device, nvmlMemory_t *memory);
+
+static PFN_nvmlInit_v2 p_nvmlInit_v2;
+static PFN_nvmlShutdown p_nvmlShutdown;
+static PFN_nvmlDeviceGetHandleByUUID p_nvmlDeviceGetHandleByUUID;
+static PFN_nvmlDeviceGetMemoryInfo p_nvmlDeviceGetMemoryInfo;
+static bool g_nvml_initialized;
+
+#define NVML_SUCCESS 0
 
 /* Keep the ABI target pinned to the minimum supported CUDA version so
  * cuGetProcAddress does not hand us newer function revisions with different
@@ -31,6 +53,7 @@ static const DispatchSymbol dispatch_symbols[] = {
     { (void **)&g_cuda.p_cuDeviceGetAttribute, "cuDeviceGetAttribute", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuDeviceTotalMem, "cuDeviceTotalMem", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuDeviceGetName, "cuDeviceGetName", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
+    { (void **)&g_cuda.p_cuDeviceGetUuid, "cuDeviceGetUuid", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemGetInfo, "cuMemGetInfo", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemAlloc_v2, "cuMemAlloc", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemFree_v2, "cuMemFree", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
@@ -68,6 +91,114 @@ static const char *const cuda_library_names[] = {
     "libcuda.so",
 #endif
 };
+
+static void *aimdo_nvml_resolve_symbol(const char *symbol) {
+#if defined(_WIN32) || defined(_WIN64)
+    return (void *)GetProcAddress((HMODULE)g_nvml_module, symbol);
+#else
+    return dlsym(g_nvml_module, symbol);
+#endif
+}
+
+static void aimdo_nvml_runtime_cleanup(void) {
+    if (g_nvml_initialized) {
+        p_nvmlShutdown();
+        g_nvml_initialized = false;
+    }
+    p_nvmlInit_v2 = NULL;
+    p_nvmlShutdown = NULL;
+    p_nvmlDeviceGetHandleByUUID = NULL;
+    p_nvmlDeviceGetMemoryInfo = NULL;
+    if (g_nvml_module) {
+#if defined(_WIN32) || defined(_WIN64)
+        FreeLibrary((HMODULE)g_nvml_module);
+#else
+        dlclose(g_nvml_module);
+#endif
+        g_nvml_module = NULL;
+    }
+}
+
+static bool aimdo_nvml_runtime_init(void) {
+    if (g_nvml_initialized) {
+        return true;
+    }
+
+#if defined(_WIN32) || defined(_WIN64)
+    char path[MAX_PATH];
+    DWORD length;
+
+    g_nvml_module = (void *)LoadLibraryExA("nvml.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!g_nvml_module &&
+        (length = GetEnvironmentVariableA("ProgramW6432", path, sizeof(path))) > 0 &&
+        length < sizeof(path) &&
+        strlen(path) + strlen("\\NVIDIA Corporation\\NVSMI\\nvml.dll") < sizeof(path)) {
+        strcat(path, "\\NVIDIA Corporation\\NVSMI\\nvml.dll");
+        g_nvml_module = (void *)LoadLibraryA(path);
+    }
+#else
+    g_nvml_module = dlopen("libnvidia-ml.so.1", RTLD_LAZY | RTLD_LOCAL);
+#endif
+    if (!g_nvml_module) {
+        log(ERROR, "%s: failed to load NVML\n", __func__);
+        return false;
+    }
+
+    p_nvmlInit_v2 = (PFN_nvmlInit_v2)aimdo_nvml_resolve_symbol("nvmlInit_v2");
+    p_nvmlShutdown = (PFN_nvmlShutdown)aimdo_nvml_resolve_symbol("nvmlShutdown");
+    p_nvmlDeviceGetHandleByUUID = (PFN_nvmlDeviceGetHandleByUUID)aimdo_nvml_resolve_symbol("nvmlDeviceGetHandleByUUID");
+    p_nvmlDeviceGetMemoryInfo = (PFN_nvmlDeviceGetMemoryInfo)aimdo_nvml_resolve_symbol("nvmlDeviceGetMemoryInfo");
+    if (!p_nvmlInit_v2 || !p_nvmlShutdown || !p_nvmlDeviceGetHandleByUUID || !p_nvmlDeviceGetMemoryInfo) {
+        log(ERROR, "%s: failed to resolve required NVML symbols\n", __func__);
+        aimdo_nvml_runtime_cleanup();
+        return false;
+    }
+    if (p_nvmlInit_v2() != NVML_SUCCESS) {
+        log(ERROR, "%s: failed to initialize NVML\n", __func__);
+        aimdo_nvml_runtime_cleanup();
+        return false;
+    }
+    g_nvml_initialized = true;
+
+    return true;
+}
+
+bool aimdo_nvml_device_init(CUdevice device, void **handle) {
+    CUuuid cuda_uuid;
+    char uuid[41];
+    unsigned char *b = (unsigned char *)cuda_uuid.bytes;
+    nvmlDevice_t nvml_handle;
+
+    if (!handle || !aimdo_nvml_runtime_init() ||
+        !CHECK_CU(g_cuda.p_cuDeviceGetUuid(&cuda_uuid, device))) {
+        return false;
+    }
+    snprintf(uuid, sizeof(uuid),
+             "GPU-%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+             b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+    if (p_nvmlDeviceGetHandleByUUID(uuid, &nvml_handle) != NVML_SUCCESS) {
+        memcpy(uuid, "MIG-", 4);
+        if (p_nvmlDeviceGetHandleByUUID(uuid, &nvml_handle) != NVML_SUCCESS) {
+            log(ERROR, "%s: failed to resolve NVML device %s\n", __func__, uuid);
+            return false;
+        }
+    }
+    *handle = (void *)nvml_handle;
+    return true;
+}
+
+bool aimdo_nvml_memory_info(void *handle, size_t *free_bytes, size_t *total_bytes) {
+    nvmlMemory_t memory;
+
+    if (!g_nvml_initialized || !handle || !free_bytes || !total_bytes ||
+        p_nvmlDeviceGetMemoryInfo((nvmlDevice_t)handle, &memory) != NVML_SUCCESS) {
+        return false;
+    }
+    *free_bytes = (size_t)memory.free;
+    *total_bytes = (size_t)memory.total;
+    return true;
+}
 
 bool aimdo_cuda_runtime_init(void) {
     if (g_cuda.p_cuInit) {
@@ -114,11 +245,11 @@ bool aimdo_cuda_runtime_init(void) {
         aimdo_cuda_runtime_cleanup();
         return false;
     }
-
     return true;
 }
 
 void aimdo_cuda_runtime_cleanup(void) {
+    aimdo_nvml_runtime_cleanup();
     memset(&g_cuda, 0, sizeof(g_cuda));
 
     if (!g_cuda_module) {

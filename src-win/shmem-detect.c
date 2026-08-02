@@ -135,16 +135,24 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
     deficit_sync = (ssize_t)(total_vram_usage + WDDM_BUDGET_HEADROOM) - (ssize_t)effective_budget;
     *prevailing_deficit_method = "WDDM budget";
 
+#if defined(__HIP_PLATFORM_AMD__)
     if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
+#else
+    if (aimdo_nvml_memory_info(nvml_device, &free_vram, &total_vram)) {
+#endif
         ssize_t deficit_cuda = (ssize_t)(CUDA_BUDGET_HEADROOM / 2) - (ssize_t)free_vram;
 
         log(DEBUG,
-            "%s: cuMemGetInfo free=%zu MB total=%zu MB deficit_cuda=%zd MB\n",
+            "%s: device memory free=%zu MB total=%zu MB deficit_cuda=%zd MB\n",
             __func__, free_vram / M, total_vram / M, deficit_cuda / (ssize_t)M);
 
         if (deficit_cuda > deficit_sync) {
             deficit_sync = deficit_cuda;
+#if defined(__HIP_PLATFORM_AMD__)
             *prevailing_deficit_method = "cuMemGetInfo (Windows)";
+#else
+            *prevailing_deficit_method = "NVML (Windows)";
+#endif
         }
     }
 

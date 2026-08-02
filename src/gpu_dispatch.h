@@ -16,6 +16,7 @@ typedef CUresult (CUDAAPI *PFN_cuDeviceGetAttribute)(int *pi, CUdevice_attribute
                                                      CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuDeviceTotalMem)(size_t *bytes, CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuDeviceGetName)(char *name, int len, CUdevice dev);
+typedef CUresult (CUDAAPI *PFN_cuDeviceGetUuid)(CUuuid *uuid, CUdevice dev);
 typedef CUresult (CUDAAPI *PFN_cuMemGetInfo)(size_t *free_bytes, size_t *total_bytes);
 typedef CUresult (CUDAAPI *PFN_cuMemAlloc_v2)(CUdeviceptr *dptr, size_t bytesize);
 typedef CUresult (CUDAAPI *PFN_cuMemFree_v2)(CUdeviceptr dptr);
@@ -60,6 +61,7 @@ typedef struct AimdoCudaDispatch {
     PFN_cuDeviceGetAttribute p_cuDeviceGetAttribute;
     PFN_cuDeviceTotalMem p_cuDeviceTotalMem;
     PFN_cuDeviceGetName p_cuDeviceGetName;
+    PFN_cuDeviceGetUuid p_cuDeviceGetUuid;
     PFN_cuMemGetInfo p_cuMemGetInfo;
     PFN_cuMemAlloc_v2 p_cuMemAlloc_v2;
     PFN_cuMemFree_v2 p_cuMemFree_v2;
@@ -94,3 +96,8 @@ extern PFN_deviceGetProperties g_device_get_properties;
 
 bool aimdo_cuda_runtime_init(void);
 void aimdo_cuda_runtime_cleanup(void);
+
+#if !defined(__HIP_PLATFORM_AMD__)
+bool aimdo_nvml_device_init(CUdevice device, void **handle);
+bool aimdo_nvml_memory_info(void *handle, size_t *free_bytes, size_t *total_bytes);
+#endif

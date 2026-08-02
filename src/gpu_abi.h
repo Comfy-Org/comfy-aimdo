@@ -27,6 +27,10 @@ typedef struct CUstream_st *CUstream;
 typedef struct CUevent_st *CUevent;
 typedef unsigned long long CUmemGenericAllocationHandle;
 
+typedef struct CUuuid_st {
+    char bytes[16];
+} CUuuid;
+
 typedef enum CUdevice_attribute_enum {
     CU_DEVICE_ATTRIBUTE_INTEGRATED = 18,
 } CUdevice_attribute;
