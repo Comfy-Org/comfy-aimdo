@@ -28,6 +28,8 @@ def _native_log(level, message):
 
 def detect_vendor():
     version = ""
+    hip = None
+    cuda = None
     try:
         torch_spec = importlib.util.find_spec("torch")
         for folder in torch_spec.submodule_search_locations:
@@ -37,9 +39,20 @@ def detect_vendor():
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 version = module.__version__
+                hip = getattr(module, "hip", None)
+                cuda = getattr(module, "cuda", None)
     except Exception as e:
         logging.warning("Failed to detect Torch version")
         pass
+
+    # The local version suffix is only present on the official wheels; a torch
+    # built from source reports a plain "2.12.0". version.py always sets hip and
+    # cuda for the build it came from, so prefer those and keep the suffix
+    # sniffing as a fallback.
+    if hip:
+        return "rocm"
+    if cuda:
+        return "cuda"
 
     if '+cu' in version:
         return "cuda"
