@@ -44,12 +44,14 @@ static CUresult CUDAAPI aimdo_cuMemAllocAsync_ptsz(CUdeviceptr *dptr, size_t siz
 static CUresult CUDAAPI aimdo_cuMemFreeAsync(CUdeviceptr dptr, CUstream hStream) {
     CUresult result = malloc_graph_free(dptr, hStream);
     if (result != -1) return result;
+    if (aimdo_cuda_allocation_size(dptr) >= 8 * M && malloc_graph_reject_external(hStream)) return CUDA_ERROR_OUT_OF_MEMORY;
     return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync);
 }
 
 static CUresult CUDAAPI aimdo_cuMemFreeAsync_ptsz(CUdeviceptr dptr, CUstream hStream) {
     CUresult result = malloc_graph_free(dptr, hStream);
     if (result != -1) return result;
+    if (aimdo_cuda_allocation_size(dptr) >= 8 * M && malloc_graph_reject_external(hStream)) return CUDA_ERROR_OUT_OF_MEMORY;
     return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync_ptsz);
 }
 
