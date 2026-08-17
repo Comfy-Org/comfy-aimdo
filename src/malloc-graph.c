@@ -2,13 +2,12 @@
 
 #define MG_PAGE (8ULL * M)
 #define MG_PAGES 8192ULL
-#define MG_ERROR "aimdo memory compile error"
 
 typedef enum { EV_ALLOC, EV_FREE, EV_CALL } EventType;
 typedef struct Scope Scope;
 typedef struct {
     EventType type;
-    size_t value;
+    size_t value, bytes;
     Scope *scope;
 } Event;
 
@@ -33,17 +32,11 @@ typedef struct {
     CUmemGenericAllocationHandle *handles;
     size_t va_high, phys_count, used, peak;
     bool failed, complete;
-    char error[160];
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
 
-static void fail(MallocGraph *g, const char *reason) {
-    if (!g->failed) {
-        snprintf(g->error, sizeof(g->error), MG_ERROR ": %s", reason);
-        g->failed = true;
-    }
-}
+static void fail(MallocGraph *g) { g->failed = true; }
 
 static bool grow(void **p, size_t *capacity, size_t count, size_t size) {
     if (count < *capacity) return true;
@@ -55,18 +48,19 @@ static bool grow(void **p, size_t *capacity, size_t count, size_t size) {
     return true;
 }
 
-static bool event(MallocGraph *g, Scope *s, EventType type, size_t value, Scope *scope) {
+static bool event(MallocGraph *g, Scope *s, EventType type, size_t value, size_t bytes, Scope *scope) {
     if (s->recording) {
         if (!grow((void **)&s->events, &s->capacity, s->count, sizeof(Event))) {
-            fail(g, "host allocation failed");
+            fail(g);
             return false;
         }
-        s->events[s->count++] = (Event){type, value, scope};
+        s->events[s->count++] = (Event){type, value, bytes, scope};
         return true;
     }
     if (s->cursor == s->count || s->events[s->cursor].type != type ||
-        s->events[s->cursor].value != value || s->events[s->cursor].scope != scope) {
-        fail(g, "replay differs from recording");
+        s->events[s->cursor].value != value || s->events[s->cursor].bytes != bytes ||
+        s->events[s->cursor].scope != scope) {
+        fail(g);
         return false;
     }
     s->cursor++;
@@ -109,8 +103,8 @@ static int graph_alloc(MallocGraph *g, CUdeviceptr *ptr, size_t size) {
     size_t pages = ALIGN_UP(size, MG_PAGE) / MG_PAGE, va = 0;
     if (!s->recording) {
         if (s->cursor == s->count || s->events[s->cursor].type != EV_ALLOC ||
-            s->events[s->cursor].value >> 32 != pages) {
-            fail(g, "allocation differs from recording");
+            s->events[s->cursor].bytes != size) {
+            fail(g);
             return CUDA_ERROR_OUT_OF_MEMORY;
         }
         va = (uint32_t)s->events[s->cursor].value;
@@ -127,7 +121,7 @@ static int graph_alloc(MallocGraph *g, CUdeviceptr *ptr, size_t size) {
         }
         if (!found) va = g->va_high;
         if (va + pages > MG_PAGES) {
-            fail(g, "virtual arena exhausted");
+            fail(g);
             return CUDA_ERROR_OUT_OF_MEMORY;
         }
         if (va + pages > g->va_high) g->va_high = va + pages;
@@ -136,13 +130,13 @@ static int graph_alloc(MallocGraph *g, CUdeviceptr *ptr, size_t size) {
                 size_t p = 0;
                 while (p < g->phys_count && g->phys_live[p]) p++;
                 if (map_page(g, va + j, p)) {
-                    fail(g, "CUDA virtual memory allocation failed");
+                    fail(g);
                     return CUDA_ERROR_OUT_OF_MEMORY;
                 }
             }
             g->phys_live[g->va_phys[va + j]] = 1;
         }
-        event(g, s, EV_ALLOC, (pages << 32) | va, NULL);
+        event(g, s, EV_ALLOC, va, size, NULL);
     }
     for (size_t j = 0; j < pages; j++) {
         int p = g->va_phys[va + j];
@@ -159,17 +153,17 @@ static int graph_alloc(MallocGraph *g, CUdeviceptr *ptr, size_t size) {
 
 static int graph_free(MallocGraph *g, CUdeviceptr ptr) {
     if (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE) {
-        fail(g, "free crosses graph boundary");
+        fail(g);
         return 1;
     }
     size_t va = (ptr - g->base) / MG_PAGE;
     if (!g->va_live[va] || g->owners[va] != g->current) {
-        fail(g, "free crosses graph boundary");
+        fail(g);
         return 1;
     }
     size_t pages = g->va_span[va];
-    if (!pages) { fail(g, "free is not an allocation start"); return 1; }
-    if (!event(g, g->current, EV_FREE, va, NULL)) return 1;
+    if (!pages) { fail(g); return 1; }
+    if (!event(g, g->current, EV_FREE, va, 0, NULL)) return 1;
     for (size_t j = 0; j < pages; j++) {
         int p = g->va_phys[va + j];
         g->va_live[va + j] = 0;
@@ -200,7 +194,7 @@ bool malloc_graph_free(CUdeviceptr ptr, CUstream stream, int *result) {
 
 bool malloc_graph_reject_external(CUstream stream) {
     if (!active_graph || active_graph->stream != stream) return false;
-    fail(active_graph, "free crosses graph boundary");
+    fail(active_graph);
     return true;
 }
 
@@ -232,18 +226,24 @@ SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
     MallocGraph *g = handle;
     if (!g || g != active_graph || g->failed) return false;
     Scope *s = find_scope(g, name);
-    if (s && s->active) { fail(g, "recursive subgraph"); return false; }
+    if (s && s->active) { fail(g); return false; }
+    if (s && g->current->recording &&
+        (!g->current->count || g->current->events[g->current->count - 1].type != EV_CALL ||
+         g->current->events[g->current->count - 1].scope != s)) {
+        fail(g);
+        return false;
+    }
     if (!s) {
         s = calloc(1, sizeof(*s));
         if (!s || !grow((void **)&g->scopes, &g->scope_capacity, g->scope_count, sizeof(Scope *))) {
-            free(s); fail(g, "host allocation failed"); return false;
+            free(s); fail(g); return false;
         }
         s->name = strdup(name);
         s->recording = true;
         g->scopes[g->scope_count++] = s;
     }
-    if (!event(g, g->current, EV_CALL, 0, s) || !push_stack(g, g->current)) {
-        fail(g, "subgraph push failed"); return false;
+    if (!event(g, g->current, EV_CALL, 0, 0, s) || !push_stack(g, g->current)) {
+        fail(g); return false;
     }
     s->cursor = 0; s->active = true;
     g->current = s;
@@ -254,8 +254,8 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
     MallocGraph *g = handle;
     if (!g || g != active_graph || g->failed) return false;
     Scope *s = g->current;
-    if (s->live) { fail(g, "allocation leaked from scope"); return false; }
-    if (!s->recording && s->cursor != s->count) { fail(g, "replay is incomplete"); return false; }
+    if (s->live) { fail(g); return false; }
+    if (!s->recording && s->cursor != s->count) { fail(g); return false; }
     s->recording = false;
     if (g->depth) {
         s->active = false;
@@ -273,11 +273,6 @@ SHARED_EXPORT bool malloc_graph_replay(void *handle) {
     g->root.cursor = 0; g->root.recording = false; g->root.active = true;
     g->current = &g->root; g->complete = false; active_graph = g;
     return true;
-}
-
-SHARED_EXPORT const char *malloc_graph_error(void *handle) {
-    MallocGraph *g = handle;
-    return g && g->error[0] ? g->error : MG_ERROR ": invalid graph state";
 }
 
 SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
