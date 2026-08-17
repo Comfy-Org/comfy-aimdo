@@ -211,6 +211,8 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     CUdeviceptr dptr;
     CUresult status = 0;
 
+    int graph_status = malloc_graph_alloc(devPtr, size, hStream);
+    if (graph_status >= 0) return graph_status;
     log(VVERBOSE, "%s (start) size=%zuk stream=%p\n", __func__, size / K, hStream);
 
     if (!devPtr || !true_cuMemAllocAsync) {
@@ -238,6 +240,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
 
 success:
     account_alloc(*devPtr, size);
+    malloc_graph_note(*devPtr, size, hStream);
 
     log(VVERBOSE, "%s (return): ptr=%p\n", __func__, (void *)(uintptr_t)*devPtr);
     return 0;
@@ -246,6 +249,12 @@ success:
 int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
                           CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
     CUresult status;
+    int graph_status = malloc_graph_free(devPtr, hStream);
+    if (graph_status >= 0) return graph_status;
+    if (graph_status == -2) {
+        /* External frees on the recording stream are rejected by the compiler. */
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
 
     log(VVERBOSE, "%s (start) ptr=%p\n", __func__, (void *)(uintptr_t)devPtr);
 

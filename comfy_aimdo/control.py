@@ -110,6 +110,15 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
 
+    lib.malloc_graph_record.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_record.restype = ctypes.c_void_p
+    lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_replay.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.malloc_graph_stat.restype = ctypes.c_size_t
+    lib.malloc_graph_destroy.argtypes = [ctypes.c_void_p]
+
     if simple_vram_headroom is not None:
         lib.set_simple_vram_headroom(int(simple_vram_headroom))
     lib.set_nvml_pressure(bool(nvml_pressure))
@@ -195,3 +204,6 @@ def get_total_vram_usage():
     if lib is None:
         return 0
     return sum(lib.get_total_vram_usage(devctx) for devctx in devctxs)
+
+
+from .malloc_graph import record

@@ -236,6 +236,9 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
                             CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
 int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
                           CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
+int malloc_graph_alloc(CUdeviceptr *p, size_t n, CUstream s);
+int malloc_graph_free(CUdeviceptr p, CUstream s);
+void malloc_graph_note(CUdeviceptr p, size_t n, CUstream s);
 
 bool allocations_init(void);
 void allocations_cleanup(void);
