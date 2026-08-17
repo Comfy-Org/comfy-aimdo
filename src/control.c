@@ -1,6 +1,14 @@
 #include "plat.h"
 #include "aimdo-time.h"
 #include "xfer-file.h"
+#include "malloc-graph.h"
+
+SHARED_EXPORT void *aimdo_malloc_graph_record(uint64_t stream) { return malloc_graph_record((CUstream)stream); }
+SHARED_EXPORT bool aimdo_malloc_graph_push(void *g, const char *name) { return malloc_graph_push(g, name); }
+SHARED_EXPORT bool aimdo_malloc_graph_pop(void *g) { return malloc_graph_pop(g); }
+SHARED_EXPORT bool aimdo_malloc_graph_replay(void *g, uint64_t stream) { return malloc_graph_replay(g, (CUstream)stream); }
+SHARED_EXPORT void aimdo_malloc_graph_destroy(void *g) { malloc_graph_destroy(g); }
+SHARED_EXPORT size_t aimdo_malloc_graph_stat(void *g, int which) { return malloc_graph_stat(g, which); }
 
 #if !defined(_WIN32) && !defined(_WIN64) && defined(AIMDO_CUDA)
 #define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)

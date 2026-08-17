@@ -3,6 +3,7 @@
 #include "plat.h"
 
 #include <funchook.h>
+#include "malloc-graph.h"
 
 static funchook_t *funchook_state;
 

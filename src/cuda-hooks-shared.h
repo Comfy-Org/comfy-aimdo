@@ -30,18 +30,26 @@ static CUresult CUDAAPI aimdo_cuMemFree_v2(CUdeviceptr dptr) {
 }
 
 static CUresult CUDAAPI aimdo_cuMemAllocAsync(CUdeviceptr *dptr, size_t size, CUstream hStream) {
+    CUresult result = malloc_graph_alloc(dptr, size, hStream);
+    if (result != -1) return result;
     return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync);
 }
 
 static CUresult CUDAAPI aimdo_cuMemAllocAsync_ptsz(CUdeviceptr *dptr, size_t size, CUstream hStream) {
+    CUresult result = malloc_graph_alloc(dptr, size, hStream);
+    if (result != -1) return result;
     return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync_ptsz);
 }
 
 static CUresult CUDAAPI aimdo_cuMemFreeAsync(CUdeviceptr dptr, CUstream hStream) {
+    CUresult result = malloc_graph_free(dptr, hStream);
+    if (result != -1) return result;
     return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync);
 }
 
 static CUresult CUDAAPI aimdo_cuMemFreeAsync_ptsz(CUdeviceptr dptr, CUstream hStream) {
+    CUresult result = malloc_graph_free(dptr, hStream);
+    if (result != -1) return result;
     return aimdo_cuda_free_async(dptr, hStream, true_cuMemFreeAsync_ptsz);
 }
 

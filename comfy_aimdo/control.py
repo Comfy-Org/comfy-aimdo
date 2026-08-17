@@ -159,6 +159,10 @@ def init_device(device_id, extra_vram_headroom: int = 0):
         device_id = (device_id, extra_vram_headroom)
     return init_devices([device_id])
 
+def record(stream):
+    from .malloc_graph import record as malloc_graph_record
+    return malloc_graph_record(stream)
+
 def get_devctx(device_id: int):
     devctx = lib.get_devctx(int(device_id))
     if devctx:
