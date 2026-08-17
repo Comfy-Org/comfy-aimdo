@@ -251,10 +251,6 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     CUresult status;
     int graph_status = malloc_graph_free(devPtr, hStream);
     if (graph_status >= 0) return graph_status;
-    if (graph_status == -2) {
-        /* External frees on the recording stream are rejected by the compiler. */
-        return CUDA_ERROR_OUT_OF_MEMORY;
-    }
 
     log(VVERBOSE, "%s (start) ptr=%p\n", __func__, (void *)(uintptr_t)devPtr);
 
