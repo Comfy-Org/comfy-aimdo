@@ -150,6 +150,21 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
     log(DEBUG, "%s: could not account free at %p\n", __func__, (void *)(uintptr_t)ptr);
 }
 
+static size_t allocation_size(CUdeviceptr ptr) {
+    SizeEntry *entry;
+    size_t size = 0;
+
+    st_lock();
+    for (entry = size_table[size_hash(ptr)]; entry; entry = entry->next) {
+        if (entry->ptr == ptr) {
+            size = entry->size;
+            break;
+        }
+    }
+    st_unlock();
+    return size;
+}
+
 int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
                       CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
     CUdeviceptr dptr;
@@ -219,6 +234,9 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemAllocAsync(devPtr, size, hStream);
     }
+    if (malloc_graph_alloc(devPtr, size, hStream)) {
+        return *devPtr ? 0 : CUDA_ERROR_OUT_OF_MEMORY;
+    }
 
     vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
 
@@ -258,6 +276,10 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFreeAsync(devPtr, hStream);
     }
+    if (malloc_graph_free(devPtr, hStream, &status)) {
+        return status;
+    }
+    if (allocation_size(devPtr) >= 8 * M && malloc_graph_reject_external(hStream)) return 1;
 
     status = true_cuMemFreeAsync(devPtr, hStream);
     if (!CHECK_CU(status)) {
