@@ -154,16 +154,16 @@ static int graph_alloc(MallocGraph *g, CUdeviceptr *ptr, size_t size) {
 static int graph_free(MallocGraph *g, CUdeviceptr ptr) {
     if (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE) {
         fail(g);
-        return 1;
+        return 0;
     }
     size_t va = (ptr - g->base) / MG_PAGE;
     if (!g->va_live[va] || g->owners[va] != g->current) {
         fail(g);
-        return 1;
+        return 0;
     }
     size_t pages = g->va_span[va];
-    if (!pages) { fail(g); return 1; }
-    if (!event(g, g->current, EV_FREE, va, 0, NULL)) return 1;
+    if (!pages) { fail(g); return 0; }
+    if (!event(g, g->current, EV_FREE, va, 0, NULL)) return 0;
     for (size_t j = 0; j < pages; j++) {
         int p = g->va_phys[va + j];
         g->va_live[va + j] = 0;

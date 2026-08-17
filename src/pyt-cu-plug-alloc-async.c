@@ -279,7 +279,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     if (malloc_graph_free(devPtr, hStream, &status)) {
         return status;
     }
-    if (allocation_size(devPtr) >= 8 * M && malloc_graph_reject_external(hStream)) return 1;
+    if (allocation_size(devPtr) >= 8 * M) malloc_graph_reject_external(hStream);
 
     status = true_cuMemFreeAsync(devPtr, hStream);
     if (!CHECK_CU(status)) {
