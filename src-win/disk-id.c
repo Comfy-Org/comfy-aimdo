@@ -5,9 +5,10 @@
 #include <setupapi.h>
 #include <winioctl.h>
 
+#define AIMDO_CACHE_MISS   (-2)
 #define AIMDO_DISK_UNKNOWN (-1)
-#define AIMDO_DISK_SLOW     0
-#define AIMDO_DISK_FAST     1
+#define AIMDO_DISK_SLOW      0
+#define AIMDO_DISK_FAST      1
 
 #define BUS_TYPE_UNKNOWN             0
 #define BUS_TYPE_USB                 7
@@ -43,45 +44,25 @@ static HANDLE open_existing(const wchar_t *path) {
 }
 
 static bool get_volume_guid(const wchar_t *path, wchar_t volume[64]) {
-    wchar_t *buffer = NULL;
+    wchar_t buffer[32768];
     wchar_t *end;
-    DWORD capacity = 256;
+    DWORD length;
     HANDLE file = open_existing(path);
-    bool success = false;
 
     if (file == INVALID_HANDLE_VALUE) {
         return false;
     }
-    while (capacity <= 32768) {
-        DWORD length;
-
-        buffer = realloc(buffer, capacity * sizeof(*buffer));
-        if (!buffer) {
-            goto done;
-        }
-        length = GetFinalPathNameByHandleW(file, buffer, capacity,
-                                           FILE_NAME_NORMALIZED | VOLUME_NAME_GUID);
-        if (!length) {
-            goto done;
-        }
-        if (length < capacity) {
-            break;
-        }
-        capacity = length + 1;
-    }
-    if (capacity > 32768 || wcsncmp(buffer, L"\\\\?\\Volume{", 11) ||
+    length = GetFinalPathNameByHandleW(file, buffer, ARRAY_SIZE(buffer),
+                                       FILE_NAME_NORMALIZED | VOLUME_NAME_GUID);
+    CloseHandle(file);
+    if (!length || length >= ARRAY_SIZE(buffer) || wcsncmp(buffer, L"\\\\?\\Volume{", 11) ||
         !(end = wcschr(buffer + 11, L'}')) || end - buffer + 2 >= 64) {
-        goto done;
+        return false;
     }
     end[1] = L'\\';
     end[2] = L'\0';
     wcscpy_s(volume, 64, buffer);
-    success = true;
-
-done:
-    free(buffer);
-    CloseHandle(file);
-    return success;
+    return true;
 }
 
 static int compare_dword(const void *a, const void *b) {
@@ -108,15 +89,18 @@ static bool get_volume_disks(const wchar_t *volume, DWORD **disks_out, DWORD *co
         return false;
     }
     while (bytes <= M) {
-        extents = realloc(extents, bytes);
-        if (!extents) {
+        VOLUME_DISK_EXTENTS *resized = realloc(extents, bytes);
+
+        if (!resized) {
             goto done;
         }
+        extents = resized;
         if (DeviceIoControl(handle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
                             NULL, 0, extents, bytes, &returned, NULL)) {
             break;
         }
-        if (GetLastError() != ERROR_MORE_DATA && GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        DWORD error = GetLastError();
+        if (error != ERROR_MORE_DATA && error != ERROR_INSUFFICIENT_BUFFER) {
             goto done;
         }
         bytes *= 2;
@@ -125,8 +109,8 @@ static bool get_volume_disks(const wchar_t *volume, DWORD **disks_out, DWORD *co
         goto done;
     }
     count = extents->NumberOfDiskExtents;
-    if (!count || returned < offsetof(VOLUME_DISK_EXTENTS, Extents) +
-                             count * sizeof(extents->Extents[0])) {
+    if (!count || count > (returned - offsetof(VOLUME_DISK_EXTENTS, Extents)) /
+                          sizeof(extents->Extents[0])) {
         goto done;
     }
     disks = malloc(count * sizeof(*disks));
@@ -156,7 +140,7 @@ done:
 }
 
 static int cache_lookup(const wchar_t *volume, const DWORD *disks, DWORD count) {
-    int result = AIMDO_DISK_UNKNOWN - 1;
+    int result = AIMDO_CACHE_MISS;
 
     AcquireSRWLockShared(&cache_lock);
     for (DiskTopologyCache *entry = cache_entries; entry; entry = entry->next) {
@@ -233,7 +217,7 @@ static DEVINST disk_devinst(DWORD disk_number) {
         HANDLE disk;
 
         SetupDiGetDeviceInterfaceDetailW(devices, &interface_data, NULL, 0, &required, NULL);
-        if (!required || !(detail = malloc(required))) {
+        if (required < sizeof(*detail) || !(detail = malloc(required))) {
             continue;
         }
         detail->cbSize = sizeof(*detail);
@@ -246,7 +230,8 @@ static DEVINST disk_devinst(DWORD disk_number) {
         }
         if (DeviceIoControl(disk, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
                             &number, sizeof(number), &returned, NULL) &&
-            returned >= sizeof(number) && number.DeviceNumber == disk_number) {
+            returned >= sizeof(number) && number.DeviceType == FILE_DEVICE_DISK &&
+            number.DeviceNumber == disk_number) {
             found = devinfo.DevInst;
         }
         CloseHandle(disk);
@@ -346,13 +331,15 @@ int aimdo_storage_fast_disk(const wchar_t *path) {
     for (DWORD i = 0; i < count; i++) {
         int disk_result = physical_disk_fast(disks[i]);
 
+        if (disk_result == AIMDO_DISK_SLOW) {
+            result = AIMDO_DISK_SLOW;
+            break;
+        }
         if (disk_result == AIMDO_DISK_UNKNOWN) {
             unknown = true;
-        } else if (disk_result == AIMDO_DISK_SLOW) {
-            result = AIMDO_DISK_SLOW;
         }
     }
-    if (unknown) {
+    if (result == AIMDO_DISK_FAST && unknown) {
         result = AIMDO_DISK_UNKNOWN;
     }
     cache_store(volume, disks, count, result);
