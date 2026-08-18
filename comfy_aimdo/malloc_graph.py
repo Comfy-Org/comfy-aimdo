@@ -6,6 +6,7 @@ from . import control
 class MallocGraph:
     def __init__(self, handle):
         self._handle = handle
+        self._scopes = []
 
     def _call(self, function, *args):
         result = function(self._handle, *args)
@@ -14,13 +15,28 @@ class MallocGraph:
         return result
 
     def push(self, name):
-        return self._call(control.lib.malloc_graph_push, name.encode()) == 2
+        recording = self._call(control.lib.malloc_graph_push, name.encode()) == 2
+        self._scopes.append(None)
+        return recording
 
     def pop(self):
         self._call(control.lib.malloc_graph_pop)
+        if self._scopes:
+            self._scopes.pop()
 
     def replay(self):
         self._call(control.lib.malloc_graph_replay)
+
+    def iterate(self, name=None):
+        if name is None:
+            if self._scopes:
+                self.pop()
+            return False
+        if self._scopes and self._scopes[-1] == name:
+            self.pop()
+        recording = self.push(name)
+        self._scopes[-1] = name
+        return recording
 
     def _stat(self, which):
         return control.lib.malloc_graph_stat(self._handle, which)

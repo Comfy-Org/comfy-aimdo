@@ -7,6 +7,8 @@ import sys
 TESTS = (
     "malloc-graph-cuda.py",
     "malloc-graph-nested-cuda.py",
+    "malloc-graph-iterate-cuda.py",
+    "malloc-graph-nested-iterate-cuda.py",
     "malloc-graph-empty-cuda.py",
     "malloc-graph-empty-subgraph-cuda.py",
     "malloc-graph-different-subgraph-cuda.py",
