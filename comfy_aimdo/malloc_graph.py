@@ -20,6 +20,14 @@ class MallocGraph:
     def replay(self):
         self._call(control.lib.malloc_graph_replay)
 
+    def iterate(self, name=None):
+        result = control.lib.malloc_graph_iterate(
+            self._handle, name.encode() if name is not None else None
+        )
+        if not result:
+            raise RuntimeError("aimdo memory compile error")
+        return result == 2
+
     def _stat(self, which):
         return control.lib.malloc_graph_stat(self._handle, which)
 
@@ -39,6 +47,8 @@ def record(stream):
     lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     lib.malloc_graph_create.restype = ctypes.c_void_p
     lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.malloc_graph_iterate.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.malloc_graph_iterate.restype = ctypes.c_int
     lib.malloc_graph_pop.argtypes = lib.malloc_graph_replay.argtypes = [ctypes.c_void_p]
     lib.malloc_graph_push.restype = lib.malloc_graph_pop.restype = lib.malloc_graph_replay.restype = ctypes.c_bool
     lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]

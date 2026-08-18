@@ -444,6 +444,22 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
     return true;
 }
 
+SHARED_EXPORT int malloc_graph_iterate(void *handle, const char *name) {
+    MallocGraph *g = handle;
+
+    if (!g || g != active_graph || g->failed ||
+        (g->state->next && !malloc_graph_pop(handle))) {
+        return 0;
+    }
+    if (!name) {
+        return 1;
+    }
+    if (!malloc_graph_push(handle, name)) {
+        return 0;
+    }
+    return g->state->recording ? 2 : 1;
+}
+
 SHARED_EXPORT bool malloc_graph_replay(void *handle) {
     MallocGraph *g = handle;
 
