@@ -119,7 +119,12 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
     CUresult r;
 
     if (phys == g->phys_count) {
+        vbars_free_stream(budget_deficit(MG_PAGE), g->stream);
         r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
+        if (r == CUDA_ERROR_OUT_OF_MEMORY) {
+            vbars_free_stream(MG_PAGE, g->stream);
+            r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
+        }
         if (r) {
             return r;
         }
