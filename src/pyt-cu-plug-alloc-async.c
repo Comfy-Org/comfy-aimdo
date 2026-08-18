@@ -178,7 +178,7 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
         return true_cuMemAlloc_v2(devPtr, size);
     }
 
-    vbars_free(budget_deficit(size + CUDA_MALLOC_HEADROOM));
+    vbars_free(budget_deficit(size + CUDA_MALLOC_HEADROOM), true);
 
     if (CHECK_CU(true_cuMemAlloc_v2(&dptr, size))) {
         *devPtr = dptr;
@@ -186,7 +186,7 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
         return 0;
     }
 
-    vbars_free(size + CUDA_MALLOC_HEADROOM);
+    vbars_free(size + CUDA_MALLOC_HEADROOM, true);
     status = true_cuMemAlloc_v2(&dptr, size);
     if (CHECK_CU(status)) {
         *devPtr = dptr;
@@ -247,9 +247,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     capturing = CHECK_CU(stream_is_capturing(hStream, &capture_status)) &&
                 capture_status != CU_STREAM_CAPTURE_STATUS_NONE;
 #endif
-    if (!capturing) {
-        vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
-    }
+    vbars_free(budget_deficit(MIN(size, malloc_async_clamp)), !capturing);
 
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
@@ -260,7 +258,7 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
         *devPtr = 0;
         return status;
     }
-    vbars_free(size);
+    vbars_free(size, true);
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
         *devPtr = dptr;

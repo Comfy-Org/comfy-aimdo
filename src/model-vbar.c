@@ -110,7 +110,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     return do_free;
 }
 
-size_t vbars_free(ssize_t size) {
+size_t vbars_free(ssize_t size, bool sync) {
     size_t pages_needed;
     bool dirty = false;
 
@@ -127,7 +127,12 @@ size_t vbars_free(ssize_t size) {
          i = i->higher) {
         for (;pages_needed && i->watermark > i->watermark_limit; i->watermark--) {
             if (!dirty) {
-                CHECK_CU(cuCtxSynchronize());
+                /* CUDA graph callers must pre-synchronize and pin every VBAR page
+                 * referenced by the graph before allowing unsynchronized eviction.
+                 */
+                if (sync) {
+                    CHECK_CU(cuCtxSynchronize());
+                }
                 dirty = true;
             }
             if (mod1(i, i->watermark - 1, true, false)) {
@@ -136,7 +141,7 @@ size_t vbars_free(ssize_t size) {
         }
     }
 
-    if (dirty) {
+    if (dirty && sync) {
         CHECK_CU(cuCtxSynchronize());
     }
 
@@ -354,7 +359,7 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
      * as the allocator is unreliable as it may not actually be called reliably when you
      * really need to know you have spilled.
      */
-    vbars_free(budget_deficit(0));
+    vbars_free(budget_deficit(0), true);
 
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
@@ -394,7 +399,7 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
                 return VBAR_FAULT_ERROR;
             }
             log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...\n");
-            vbars_free(VBAR_PAGE_SIZE);
+            vbars_free(VBAR_PAGE_SIZE, true);
             if (page_end > mv->watermark) {
                 log(DEBUG, "VBAR allocation cancelled due to backup-free watermark reduction\n");
                 return VBAR_FAULT_OOM;
