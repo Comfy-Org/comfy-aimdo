@@ -17,6 +17,7 @@ TESTS = (
     "malloc-graph-different-stream-cuda.py",
     "malloc-graph-off-stream-cuda.py",
     "malloc-graph-odd-sizes-cuda.py",
+    "malloc-graph-small-cuda.py",
     "malloc-graph-fragmentation-cuda.py",
     "malloc-graph-aliasing-cuda.py",
     "malloc-graph-long-run-cuda.py",

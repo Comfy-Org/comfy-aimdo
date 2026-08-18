@@ -2,6 +2,9 @@
 
 #define MG_PAGE (8ULL * M)
 #define MG_PAGES 8192ULL
+#define MG_SMALL_LIMIT (4ULL * M)
+#define MG_SMALL_ALIGN 256ULL
+#define MG_SMALL_FLAG ((size_t)1 << (sizeof(size_t) * 8 - 1))
 #define RETURN_G_FAILED(cond, retval) \
     if (cond) { \
         if (g) { \
@@ -14,6 +17,7 @@ typedef enum { EV_SENTINEL = 0, EV_ALLOC, EV_FREE, EV_CALL } EventType;
 
 typedef struct Event Event;
 typedef struct State State;
+typedef struct SmallRange SmallRange;
 
 struct Event {
     EventType type;
@@ -50,8 +54,17 @@ typedef struct {
     CUmemGenericAllocationHandle handle;
 } PhysicalPage;
 
+struct SmallRange {
+    size_t offset;
+    size_t bytes;
+    State *owner;
+
+    SmallRange *next;
+};
+
 typedef struct {
     CUdeviceptr base;
+    CUdeviceptr small_base;
     CUstream stream;
     int device;
 
@@ -60,9 +73,13 @@ typedef struct {
 
     VirtualPage virtual_pages[MG_PAGES];
     PhysicalPage physical_pages[MG_PAGES];
+    CUmemGenericAllocationHandle small_handles[MG_PAGES];
+    SmallRange *small_ranges;
 
     size_t va_count;
     size_t phys_count;
+    size_t small_size;
+    size_t small_pages;
 
     bool failed;
     bool complete;
@@ -110,32 +127,41 @@ static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
     return true;
 }
 
-static int map_page(MallocGraph *g, size_t va, size_t phys) {
+static CUresult create_page(MallocGraph *g, CUmemGenericAllocationHandle *handle) {
     CUmemAllocationProp prop = {.type = CU_MEM_ALLOCATION_TYPE_PINNED,
         .location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device}};
-    CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
-                              .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
-    CUdeviceptr addr = g->base + va * MG_PAGE;
     bool sync = true;
     CUresult r;
 
-    if (phys == g->phys_count) {
 #if defined(AIMDO_CUDA)
-        CUstreamCaptureStatus capture_status;
-        sync = !CHECK_CU(g_cuda.p_cuStreamIsCapturing(g->stream, &capture_status)) ||
-               capture_status == CU_STREAM_CAPTURE_STATUS_NONE;
+    CUstreamCaptureStatus capture_status;
+    sync = !CHECK_CU(g_cuda.p_cuStreamIsCapturing(g->stream, &capture_status)) ||
+           capture_status == CU_STREAM_CAPTURE_STATUS_NONE;
 #endif
-        vbars_free(budget_deficit(MG_PAGE), sync);
-        r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
-        if (r == CUDA_ERROR_OUT_OF_MEMORY) {
-            vbars_free(MG_PAGE, sync);
-            r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
-        }
+    vbars_free(budget_deficit(MG_PAGE), sync);
+    r = cuMemCreate(handle, MG_PAGE, &prop, 0);
+    if (r == CUDA_ERROR_OUT_OF_MEMORY) {
+        vbars_free(MG_PAGE, sync);
+        r = cuMemCreate(handle, MG_PAGE, &prop, 0);
+    }
+    if (!r) {
+        total_vram_usage += MG_PAGE;
+    }
+    return r;
+}
+
+static int map_page(MallocGraph *g, size_t va, size_t phys) {
+    CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
+                              .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
+    CUdeviceptr addr = g->base + va * MG_PAGE;
+    CUresult r;
+
+    if (phys == g->phys_count) {
+        r = create_page(g, &g->physical_pages[phys].handle);
         if (r) {
             return r;
         }
         g->phys_count++;
-        total_vram_usage += MG_PAGE;
     }
 
     if ((r = cuMemMap(addr, MG_PAGE, 0, g->physical_pages[phys].handle, 0)) ||
@@ -149,7 +175,7 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
-    if (!g || stream != g->stream || size < MG_PAGE) {
+    if (!g || stream != g->stream) {
         return false;
     }
 
@@ -159,9 +185,64 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     if (!g->state->recording) {
         Event *e = next_event(g, NULL);
         RETURN_G_FAILED(!e || e->type != EV_ALLOC || e->bytes != size, true);
-        va = (uint32_t)e->value;
         g->state->cursor = e;
-        *ptr = g->base + va * MG_PAGE;
+        *ptr = e->value & MG_SMALL_FLAG
+            ? g->small_base + (e->value & ~MG_SMALL_FLAG)
+            : g->base + e->value * MG_PAGE;
+        return true;
+    }
+
+    if (size < MG_SMALL_LIMIT) {
+        size_t bytes = ALIGN_UP(size, MG_SMALL_ALIGN);
+        size_t offset = g->small_size;
+        size_t smallest_hole = SIZE_MAX;
+        size_t previous_end = 0;
+
+        for (SmallRange *range = g->small_ranges; range; range = range->next) {
+            size_t hole = range->offset - previous_end;
+            if (hole >= bytes && hole < smallest_hole) {
+                offset = previous_end;
+                smallest_hole = hole;
+            }
+            previous_end = range->offset + range->bytes;
+        }
+        size_t hole = g->small_size - previous_end;
+        if (hole >= bytes && hole < smallest_hole) {
+            offset = previous_end;
+        }
+
+        size_t end = offset + bytes;
+        if (end > g->small_size) {
+            size_t pages = ALIGN_UP(end, MG_PAGE) / MG_PAGE;
+            RETURN_G_FAILED(pages > MG_PAGES, true);
+
+            CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
+                                      .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
+            while (g->small_pages < pages) {
+                CUmemGenericAllocationHandle *handle = &g->small_handles[g->small_pages];
+                CUdeviceptr addr = g->small_base + g->small_pages * MG_PAGE;
+                CUresult r = create_page(g, handle);
+                RETURN_G_FAILED(r, true);
+                g->small_pages++;
+                RETURN_G_FAILED(cuMemMap(addr, MG_PAGE, 0, *handle, 0) ||
+                                cuMemSetAccess(addr, MG_PAGE, &access, 1), true);
+            }
+            g->small_size = end;
+        }
+
+        SmallRange **insert = &g->small_ranges;
+        while (*insert && (*insert)->offset < offset) {
+            insert = &(*insert)->next;
+        }
+        SmallRange *range = malloc(sizeof(*range));
+        RETURN_G_FAILED(!range, true);
+        *range = (SmallRange){.offset = offset, .bytes = bytes,
+                              .owner = g->state, .next = *insert};
+        *insert = range;
+
+        event(g, EV_ALLOC, MG_SMALL_FLAG | offset, size);
+        g->state->live++;
+        *ptr = g->small_base + offset;
         return true;
     }
 
@@ -215,12 +296,34 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         return false;
     }
 
-    if (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE) {
-        RETURN_G_FAILED(size >= MG_PAGE, false);
+    bool small = ptr >= g->small_base && ptr < g->small_base + MG_PAGES * MG_PAGE;
+    if (!small && (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE)) {
+        RETURN_G_FAILED(size, false);
         return false;
     }
 
     *result = 0;
+    if (small) {
+        size_t offset = ptr - g->small_base;
+
+        if (g->state->recording) {
+            SmallRange **entry = &g->small_ranges;
+            while (*entry && (*entry)->offset != offset) {
+                entry = &(*entry)->next;
+            }
+            RETURN_G_FAILED(!*entry || (*entry)->owner != g->state ||
+                            !event(g, EV_FREE, MG_SMALL_FLAG | offset, 0), true);
+
+            SmallRange *range = *entry;
+            *entry = range->next;
+            free(range);
+            g->state->live--;
+        } else {
+            event(g, EV_FREE, MG_SMALL_FLAG | offset, 0);
+        }
+        return true;
+    }
+
     size_t va = (ptr - g->base) / MG_PAGE;
 
     if (g->state->recording) {
@@ -255,17 +358,22 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
     if (cuMemAddressReserve(&g->base, MG_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
         goto fail;
     }
+    if (cuMemAddressReserve(&g->small_base, MG_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
+        goto fail_address;
+    }
 
     for (size_t i = 0; i < MG_PAGES; i++) {
         g->virtual_pages[i].phys = -1;
     }
 
     if (!push_stack(g, &g->root, true)) {
-        goto fail_address;
+        goto fail_small_address;
     }
     active_graph = g;
     return g;
 
+fail_small_address:
+    cuMemAddressFree(g->small_base, MG_PAGES * MG_PAGE);
 fail_address:
     cuMemAddressFree(g->base, MG_PAGES * MG_PAGE);
 fail:
@@ -354,7 +462,8 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
         return 0;
     }
 
-    return (which == 1 ? g->va_count : g->phys_count) * MG_PAGE;
+    return (which == 1 ? g->va_count + g->small_pages
+                       : g->phys_count + g->small_pages) * MG_PAGE;
 }
 
 static void free_events(Event *event) {
@@ -400,8 +509,20 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
         cuMemRelease(g->physical_pages[i].handle);
     }
 
+    for (size_t i = 0; i < g->small_pages; i++) {
+        cuMemUnmap(g->small_base + i * MG_PAGE, MG_PAGE);
+        cuMemRelease(g->small_handles[i]);
+    }
+
     cuMemAddressFree(g->base, MG_PAGES * MG_PAGE);
-    total_vram_usage -= g->phys_count * MG_PAGE;
+    cuMemAddressFree(g->small_base, MG_PAGES * MG_PAGE);
+    total_vram_usage -= (g->phys_count + g->small_pages) * MG_PAGE;
+
+    while (g->small_ranges) {
+        SmallRange *range = g->small_ranges;
+        g->small_ranges = range->next;
+        free(range);
+    }
 
     free_events(g->root.next);
     free(g);
