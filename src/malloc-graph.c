@@ -243,6 +243,11 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         event(g, EV_ALLOC, MG_SMALL_FLAG | offset, size);
         g->state->live++;
         *ptr = g->small_base + offset;
+        if (size <= 1024) {
+            log(AIMDO_LOG_ERROR,
+                "MGDIAG alloc ptr=%p requested=%zu aligned=%zu state=%p stream=%p\n",
+                (void *)(uintptr_t)*ptr, size, bytes, (void *)g->state, (void *)stream);
+        }
         return true;
     }
 
@@ -315,6 +320,12 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
                             !event(g, EV_FREE, MG_SMALL_FLAG | offset, 0), true);
 
             SmallRange *range = *entry;
+            if (range->bytes <= 1024) {
+                log(AIMDO_LOG_ERROR,
+                    "MGDIAG free ptr=%p aligned=%zu owner=%p state=%p stream=%p\n",
+                    (void *)(uintptr_t)ptr, range->bytes, (void *)range->owner,
+                    (void *)g->state, (void *)stream);
+            }
             *entry = range->next;
             free(range);
             g->state->live--;
@@ -431,6 +442,18 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
         return false;
     }
 
+    if (g->state->live) {
+        log(AIMDO_LOG_ERROR, "MGDIAG pop live=%zu state=%p recording=%d\n",
+            g->state->live, (void *)g->state, g->state->recording);
+        for (SmallRange *range = g->small_ranges; range; range = range->next) {
+            if (range->owner == g->state) {
+                log(AIMDO_LOG_ERROR,
+                    "MGDIAG live-small ptr=%p offset=%zu aligned=%zu owner=%p\n",
+                    (void *)(uintptr_t)(g->small_base + range->offset), range->offset,
+                    range->bytes, (void *)range->owner);
+            }
+        }
+    }
     RETURN_G_FAILED(g->state->live || (!g->state->recording && next_event(g, NULL)), false);
 
     State *state = g->state;
