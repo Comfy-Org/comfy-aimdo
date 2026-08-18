@@ -83,6 +83,7 @@ typedef struct {
 
     bool failed;
     bool complete;
+    bool paused;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
@@ -175,7 +176,7 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
-    if (!g || stream != g->stream) {
+    if (!g || g->paused || stream != g->stream) {
         return false;
     }
 
@@ -292,7 +293,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result) {
     MallocGraph *g = active_graph;
 
-    if (!g || stream != g->stream) {
+    if (!g || g->paused || stream != g->stream) {
         return false;
     }
 
@@ -379,6 +380,16 @@ fail_address:
 fail:
     free(g);
     return NULL;
+}
+
+SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused) {
+    MallocGraph *g = handle;
+
+    if (!g || g != active_graph || g->failed) {
+        return false;
+    }
+    g->paused = paused;
+    return true;
 }
 
 SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
