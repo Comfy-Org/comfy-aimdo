@@ -116,10 +116,21 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
     CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
                               .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
     CUdeviceptr addr = g->base + va * MG_PAGE;
+    bool sync = true;
     CUresult r;
 
     if (phys == g->phys_count) {
+#if defined(AIMDO_CUDA)
+        CUstreamCaptureStatus capture_status;
+        sync = !CHECK_CU(g_cuda.p_cuStreamIsCapturing(g->stream, &capture_status)) ||
+               capture_status == CU_STREAM_CAPTURE_STATUS_NONE;
+#endif
+        vbars_free(budget_deficit(MG_PAGE), sync);
         r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
+        if (r == CUDA_ERROR_OUT_OF_MEMORY) {
+            vbars_free(MG_PAGE, sync);
+            r = cuMemCreate(&g->physical_pages[phys].handle, MG_PAGE, &prop, 0);
+        }
         if (r) {
             return r;
         }
