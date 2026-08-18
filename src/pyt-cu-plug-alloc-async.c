@@ -222,9 +222,14 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
 }
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
+                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream),
+                            PFN_cuStreamIsCapturing stream_is_capturing) {
     CUdeviceptr dptr;
     CUresult status = 0;
+    bool capturing = false;
+#if defined(AIMDO_CUDA)
+    CUstreamCaptureStatus capture_status;
+#endif
 
     log(VVERBOSE, "%s (start) size=%zuk stream=%p\n", __func__, size / K, hStream);
 
@@ -238,11 +243,22 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
         return *devPtr ? 0 : CUDA_ERROR_OUT_OF_MEMORY;
     }
 
-    vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
+#if defined(AIMDO_CUDA)
+    capturing = CHECK_CU(stream_is_capturing(hStream, &capture_status)) &&
+                capture_status != CU_STREAM_CAPTURE_STATUS_NONE;
+#endif
+    if (!capturing) {
+        vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
+    }
 
-    if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
+    status = true_cuMemAllocAsync(&dptr, size, hStream);
+    if (CHECK_CU(status)) {
         *devPtr = dptr;
         goto success;
+    }
+    if (capturing) {
+        *devPtr = 0;
+        return status;
     }
     vbars_free(size);
     status = true_cuMemAllocAsync(&dptr, size, hStream);

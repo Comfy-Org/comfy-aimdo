@@ -233,7 +233,8 @@ int aimdo_cuda_free(CUdeviceptr dptr,
                     CUresult (*true_cuMemFree_v2)(CUdeviceptr));
 
 int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream));
+                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream),
+                            PFN_cuStreamIsCapturing stream_is_capturing);
 int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
                           CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream));
 

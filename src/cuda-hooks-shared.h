@@ -30,11 +30,13 @@ static CUresult CUDAAPI aimdo_cuMemFree_v2(CUdeviceptr dptr) {
 }
 
 static CUresult CUDAAPI aimdo_cuMemAllocAsync(CUdeviceptr *dptr, size_t size, CUstream hStream) {
-    return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync);
+    return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync,
+                                   g_cuda.p_cuStreamIsCapturing);
 }
 
 static CUresult CUDAAPI aimdo_cuMemAllocAsync_ptsz(CUdeviceptr *dptr, size_t size, CUstream hStream) {
-    return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync_ptsz);
+    return aimdo_cuda_malloc_async(dptr, size, hStream, true_cuMemAllocAsync_ptsz,
+                                   g_cuda.p_cuStreamIsCapturing_ptsz);
 }
 
 static CUresult CUDAAPI aimdo_cuMemFreeAsync(CUdeviceptr dptr, CUstream hStream) {
