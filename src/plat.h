@@ -223,6 +223,7 @@ fail:
 
 /* model_vbar.c */
 size_t vbars_free(ssize_t size);
+size_t vbars_free_stream(ssize_t size, CUstream stream);
 SHARED_EXPORT
 uint64_t vbars_analyze(void *devctx, bool only_dirty);
 

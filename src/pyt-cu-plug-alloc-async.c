@@ -238,13 +238,14 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
         return *devPtr ? 0 : CUDA_ERROR_OUT_OF_MEMORY;
     }
 
-    vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
+    vbars_free_stream(budget_deficit(MIN(size, malloc_async_clamp)), hStream);
 
-    if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
+    status = true_cuMemAllocAsync(&dptr, size, hStream);
+    if (CHECK_CU(status)) {
         *devPtr = dptr;
         goto success;
     }
-    vbars_free(size);
+    vbars_free_stream(size, hStream);
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
         *devPtr = dptr;

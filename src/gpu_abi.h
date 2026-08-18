@@ -44,6 +44,12 @@ typedef enum CUevent_flags_enum {
     CU_EVENT_DISABLE_TIMING = 0x2,
 } CUevent_flags;
 
+typedef enum CUstreamCaptureStatus_enum {
+    CU_STREAM_CAPTURE_STATUS_NONE = 0,
+    CU_STREAM_CAPTURE_STATUS_ACTIVE = 1,
+    CU_STREAM_CAPTURE_STATUS_INVALIDATED = 2,
+} CUstreamCaptureStatus;
+
 typedef enum CUmemAllocationHandleType_enum {
     CU_MEM_HANDLE_TYPE_NONE = 0x0,
 } CUmemAllocationHandleType;
