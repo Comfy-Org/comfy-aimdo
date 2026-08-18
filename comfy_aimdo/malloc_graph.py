@@ -27,6 +27,12 @@ class MallocGraph:
     def replay(self):
         self._call(control.lib.malloc_graph_replay)
 
+    def pause(self):
+        self._call(control.lib.malloc_graph_pause, True)
+
+    def resume(self):
+        self._call(control.lib.malloc_graph_pause, False)
+
     def iterate(self, name=None):
         if name is None:
             if self._scopes:
@@ -58,6 +64,8 @@ def record(stream):
     lib.malloc_graph_create.restype = ctypes.c_void_p
     lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.malloc_graph_push.restype = ctypes.c_int
+    lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+    lib.malloc_graph_pause.restype = ctypes.c_bool
     lib.malloc_graph_pop.argtypes = lib.malloc_graph_replay.argtypes = [ctypes.c_void_p]
     lib.malloc_graph_pop.restype = lib.malloc_graph_replay.restype = ctypes.c_bool
     lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
