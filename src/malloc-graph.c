@@ -52,7 +52,6 @@ struct State {
 };
 
 typedef struct {
-    int phys;
     int va_span;
     uint32_t owner_depth;
 } VirtualPage;
@@ -75,6 +74,7 @@ typedef struct {
     State *state;
 
     VirtualPage virtual_pages[MG_PAGES];
+    int va_phys[MG_PAGES];
     bool physical_live[MG_PAGES];
     CUmemGenericAllocationHandle physical_handles[MG_PAGES];
     CUmemGenericAllocationHandle small_handles[MG_SMALL_PAGES];
@@ -168,7 +168,7 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
         (r = cuMemSetAccess(addr, MG_PAGE, &access, 1))) {
         return r;
     }
-    g->virtual_pages[va].phys = (int)phys;
+    g->va_phys[va] = (int)phys;
     return 0;
 }
 
@@ -256,8 +256,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     while (va + pages <= g->va_count) {
         size_t j;
         for (j = 0; j < pages; j++) {
-            VirtualPage *vpage = &g->virtual_pages[va + j];
-            if (g->physical_live[vpage->phys]) {
+            if (g->physical_live[g->va_phys[va + j]]) {
                 break;
             }
         }
@@ -275,20 +274,19 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     }
 
     for (size_t j = 0; j < pages; j++) {
-        VirtualPage *vpage = &g->virtual_pages[va + j];
-        if (vpage->phys < 0) {
+        if (g->va_phys[va + j] < 0) {
             size_t p = 0;
             while (p < g->phys_count && g->physical_live[p]) {
                 p++;
             }
             RETURN_G_FAILED(map_page(g, va + j, p), true);
         }
-        g->physical_live[vpage->phys] = true;
-        vpage->owner_depth = g->state->depth;
+        g->physical_live[g->va_phys[va + j]] = true;
     }
 
     event(g, EV_ALLOC, va, size);
     g->virtual_pages[va].va_span = pages;
+    g->virtual_pages[va].owner_depth = g->state->depth;
     g->state->live += pages;
     *ptr = g->base + va * MG_PAGE;
     return true;
@@ -336,12 +334,11 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         RETURN_G_FAILED(first->owner_depth != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
 
         for (size_t j = 0; j < first->va_span; j++) {
-            VirtualPage *vpage = &g->virtual_pages[va + j];
-            g->physical_live[vpage->phys] = false;
-            vpage->owner_depth = 0;
+            g->physical_live[g->va_phys[va + j]] = false;
         }
         g->state->live -= first->va_span;
         first->va_span = 0;
+        first->owner_depth = 0;
     } else {
         event(g, EV_FREE, va, 0);
     }
@@ -368,7 +365,7 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
     }
 
     for (size_t i = 0; i < MG_PAGES; i++) {
-        g->virtual_pages[i].phys = -1;
+        g->va_phys[i] = -1;
     }
 
     if (!push_stack(g, &g->root, true)) {
@@ -518,7 +515,7 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     }
 
     for (size_t i = 0; i < g->va_count; i++) {
-        if (g->virtual_pages[i].phys >= 0) {
+        if (g->va_phys[i] >= 0) {
             cuMemUnmap(g->base + i * MG_PAGE, MG_PAGE);
         }
     }
