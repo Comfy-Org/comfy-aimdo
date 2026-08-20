@@ -207,6 +207,70 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
     return 0;
 }
 
+static bool dry_apply(MallocGraph *g, Event *event) {
+    AllocationState *allocations = &g->allocations;
+    size_t value = event->value;
+
+    if (event->type == EV_ALLOC || event->type == EV_FREE) {
+        VirtualPage *first = &allocations->virtual_pages[value];
+
+        if (event->type == EV_ALLOC) {
+            *first = (VirtualPage){
+                .va_span = ALIGN_UP(event->bytes, MG_PAGE) / MG_PAGE,
+                .owner_depth = g->state->depth};
+            g->state->live += first->va_span;
+        }
+
+        for (size_t i = 0; i < first->va_span; i++) {
+            allocations->physical_live[g->va_phys[value + i]] = event->type == EV_ALLOC;
+        }
+
+        if (event->type == EV_FREE) {
+            g->state->live -= first->va_span;
+            *first = (VirtualPage){};
+        }
+    } else if (event->type == EV_ALLOC_SMALL || event->type == EV_FREE_SMALL) {
+        SmallRange **entry = &g->small_ranges;
+
+        while (*entry && (*entry)->offset < value) {
+            entry = &(*entry)->next;
+        }
+
+        if (event->type == EV_ALLOC_SMALL) {
+            SmallRange *range = malloc(sizeof(*range));
+            RETURN_G_FAILED(!range, false);
+            *range = (SmallRange){
+                .offset = value, .bytes = ALIGN_UP(event->bytes, MG_SMALL_ALIGN),
+                .owner_depth = g->state->depth, .next = *entry};
+            *entry = range;
+            g->state->live++;
+        } else {
+            SmallRange *range = *entry;
+            *entry = range->next;
+            free(range);
+            g->state->live--;
+        }
+    }
+    return true;
+}
+
+static bool materialize(MallocGraph *g, Event *event) {
+    if (event->snapshot) {
+        SmallRange *small_ranges = NULL;
+        if (!copy_small_ranges(&small_ranges, event->small_snapshot)) {
+            g->failed = true;
+            free_small_ranges(small_ranges);
+            return false;
+        }
+        free_small_ranges(g->small_ranges);
+        g->allocations = *event->snapshot;
+        g->small_ranges = small_ranges;
+        g->state->live = 0;
+        return true;
+    }
+    return materialize(g, event->previous) && dry_apply(g, event);
+}
+
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
