@@ -10,15 +10,17 @@ torch.empty(1, device="cuda")
 
 graph = aimdo.record(torch.cuda.current_stream())
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+pointer = value.data_ptr()
 del value
 graph.pop()
 
-other = torch.cuda.Stream()
-with torch.cuda.stream(other):
-    graph.replay()
-    value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
-    del value
-    graph.pop()
-other.synchronize()
+graph.replay()
+graph.pop()
 
-print("Different-stream replay branch test passed")
+graph.replay()
+value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+assert value.data_ptr() == pointer
+del value
+graph.pop()
+
+print("CUDA malloc graph branch reuse test passed")

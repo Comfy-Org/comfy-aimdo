@@ -1,10 +1,6 @@
-import os
-
 import comfy_aimdo.control as aimdo
 import torch
 
-
-ERROR = "aimdo memory compile error"
 
 assert aimdo.init("cuda")
 assert aimdo.init_device(torch.cuda.current_device())
@@ -20,10 +16,8 @@ graph.pop()
 graph.replay()
 graph.push("second")
 graph.pop()
-try:
-    graph.push("first")
-except RuntimeError as error:
-    assert ERROR in str(error)
-    print(f"Reordered subgraphs: {error}", flush=True)
-    os._exit(0)
-raise AssertionError(f"reordering subgraphs did not raise {ERROR}")
+graph.push("first")
+graph.pop()
+graph.pop()
+
+print("Reordered subgraph branch test passed")

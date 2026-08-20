@@ -1,11 +1,8 @@
-import os
-
 import comfy_aimdo.control as aimdo
 import torch
 
 
 M = 1024 * 1024
-ERROR = "aimdo memory compile error"
 
 assert aimdo.init("cuda")
 assert aimdo.init_device(torch.cuda.current_device())
@@ -13,23 +10,22 @@ torch.empty(1, device="cuda")
 
 graph = aimdo.record(torch.cuda.current_stream())
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+first_pointer = value.data_ptr()
 del value
 graph.pop()
 
 graph.replay()
-value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
-del value
-try:
-    torch.empty(8 * M, dtype=torch.uint8, device="cuda")
-except RuntimeError:
-    pass
-else:
-    raise AssertionError("an extra allocation did not fail")
+first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+second = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+assert first.data_ptr() == first_pointer
+assert second.data_ptr() != first_pointer
+del first, second
+graph.pop()
 
-try:
-    graph.pop()
-except RuntimeError as error:
-    assert ERROR in str(error)
-    print(f"Extra allocation: {error}", flush=True)
-    os._exit(0)
-raise AssertionError(f"an extra allocation did not raise {ERROR}")
+graph.replay()
+value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+assert value.data_ptr() == first_pointer
+del value
+graph.pop()
+
+print("Extra allocation branch test passed")

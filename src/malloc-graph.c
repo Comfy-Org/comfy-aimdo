@@ -43,6 +43,7 @@ struct Event {
     size_t next_count;
     Event *previous;
     AllocationState *snapshot;
+    bool terminal;
 };
 
 struct State {
@@ -51,6 +52,7 @@ struct State {
     size_t live;
     uint32_t depth;
     bool recording;
+    bool materialized_at_entry;
 
     State *next;
 };
@@ -96,6 +98,7 @@ typedef struct {
     bool failed;
     bool complete;
     bool paused;
+    bool materialized;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
@@ -140,41 +143,70 @@ static bool append_event(MallocGraph *g, Event *parent, Event *event) {
     return true;
 }
 
-static Event *next_event(MallocGraph *g, const char *name) {
-    Event *event = g->state->cursor;
-
-    if (name && event->type == EV_CALL && !strcmp(event->name, name)) {
-        return event;
+static bool event_matches(Event *event, EventType type, size_t value, size_t bytes, const char *name) {
+    if (event->type != type) {
+        return false;
     }
-    for (event = event->next_count ? event->next[0] : NULL;
-         event && event->type == EV_CALL;
-         event = event->next_count ? event->next[0] : NULL) {
-        if (name && !strcmp(event->name, name)) {
+    if (type == EV_CALL) {
+        return !strcmp(event->name, name);
+    }
+    if (event->bytes != bytes) {
+        return false;
+    }
+    return type == EV_ALLOC || type == EV_ALLOC_SMALL || event->value == value;
+}
+
+static Event *find_event_from(Event *parent, EventType type, size_t value, size_t bytes, const char *name) {
+    for (size_t i = 0; i < parent->next_count; i++) {
+        Event *event = parent->next[i];
+        if (event_matches(event, type, value, bytes, name)) {
             return event;
         }
+        if (event->type == EV_CALL) {
+            Event *match = find_event_from(event, type, value, bytes, name);
+            if (match) {
+                return match;
+            }
+        }
     }
-    return name ? NULL : event;
+    return NULL;
+}
+
+static Event *find_event(MallocGraph *g, EventType type, size_t value, size_t bytes, const char *name) {
+    Event *cursor = g->state->cursor;
+    if (type == EV_CALL && event_matches(cursor, type, value, bytes, name)) {
+        return cursor;
+    }
+    return find_event_from(cursor, type, value, bytes, name);
+}
+
+static Event *find_terminal(Event *event) {
+    if (event->terminal) {
+        return event;
+    }
+    for (size_t i = 0; i < event->next_count; i++) {
+        if (event->next[i]->type == EV_CALL) {
+            Event *terminal = find_terminal(event->next[i]);
+            if (terminal) {
+                return terminal;
+            }
+        }
+    }
+    return NULL;
 }
 
 static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) {
-    Event *e;
-
-    if (g->state->recording) {
-        e = calloc(1, sizeof(*e));
-        RETURN_G_FAILED(!e, NULL);
-        e->type = type;
-        e->value = value;
-        e->bytes = bytes;
-        if (!append_event(g, g->state->cursor, e)) {
-            free(e);
-            return NULL;
-        }
-    } else {
-        e = next_event(g, NULL);
-        RETURN_G_FAILED(!e || e->type != type || e->value != value || e->bytes != bytes, NULL);
+    Event *event = calloc(1, sizeof(*event));
+    RETURN_G_FAILED(!event, NULL);
+    event->type = type;
+    event->value = value;
+    event->bytes = bytes;
+    if (!append_event(g, g->state->cursor, event)) {
+        free(event);
+        return NULL;
     }
-    g->state->cursor = e;
-    return e;
+    g->state->cursor = event;
+    return event;
 }
 
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
@@ -188,7 +220,8 @@ static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
         }
     }
     *state = (State){.scope = scope, .cursor = scope, .depth = g->state ? g->state->depth + 1 : 1,
-                     .recording = recording, .next = g->state};
+                     .recording = recording, .materialized_at_entry = g->materialized,
+                     .next = g->state};
     g->state = state;
     return true;
 }
@@ -297,9 +330,12 @@ static bool materialize(MallocGraph *g) {
         event = event->previous;
     }
 
-    if (!restore_allocations(g, state->scope->snapshot)) {
-        free(events);
-        return false;
+    if (!g->materialized) {
+        if (!restore_allocations(g, state->scope->snapshot)) {
+            free(events);
+            return false;
+        }
+        g->materialized = true;
     }
     state->live = 0;
     for (size_t i = 0; i < count; i++) {
@@ -309,6 +345,14 @@ static bool materialize(MallocGraph *g) {
         }
     }
     free(events);
+    return true;
+}
+
+static bool start_recording(MallocGraph *g) {
+    if (!materialize(g)) {
+        return false;
+    }
+    g->state->recording = true;
     return true;
 }
 
@@ -325,13 +369,16 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 
     if (!g->state->recording) {
         EventType type = size < MG_SMALL_LIMIT ? EV_ALLOC_SMALL : EV_ALLOC;
-        Event *e = next_event(g, NULL);
-        RETURN_G_FAILED(!e || e->type != type || e->bytes != size, true);
-        g->state->cursor = e;
-        *ptr = type == EV_ALLOC_SMALL
-            ? g->small_base + e->value
-            : g->base + e->value * MG_PAGE;
-        return true;
+        Event *match = find_event(g, type, 0, size, NULL);
+        if (match) {
+            g->state->cursor = match;
+            *ptr = type == EV_ALLOC_SMALL
+                ? g->small_base + match->value
+                : g->base + match->value * MG_PAGE;
+            return true;
+        }
+        RETURN_G_FAILED(!start_recording(g), true);
+        allocations = g->allocations;
     }
 
     if (size < MG_SMALL_LIMIT) {
@@ -449,40 +496,52 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
     if (small) {
         size_t offset = ptr - g->small_base;
 
-        if (g->state->recording) {
-            size_t entry = 0;
-            while (entry < allocations->small_count && allocations->small_ranges[entry].offset != offset) {
-                entry++;
+        if (!g->state->recording) {
+            Event *match = find_event(g, EV_FREE_SMALL, offset, 0, NULL);
+            if (match) {
+                g->state->cursor = match;
+                return true;
             }
-            RETURN_G_FAILED(entry == allocations->small_count ||
-                            allocations->small_ranges[entry].owner != g->state->depth ||
-                            !event(g, EV_FREE_SMALL, offset, 0), true);
-
-            memmove(&allocations->small_ranges[entry], &allocations->small_ranges[entry + 1],
-                    (allocations->small_count - entry - 1) * sizeof(SmallRange));
-            allocations->small_count--;
-            g->state->live--;
-        } else {
-            event(g, EV_FREE_SMALL, offset, 0);
+            RETURN_G_FAILED(!start_recording(g), true);
+            allocations = g->allocations;
         }
+
+        size_t entry = 0;
+        while (entry < allocations->small_count && allocations->small_ranges[entry].offset != offset) {
+            entry++;
+        }
+        RETURN_G_FAILED(entry == allocations->small_count ||
+                        allocations->small_ranges[entry].owner != g->state->depth ||
+                        !event(g, EV_FREE_SMALL, offset, 0), true);
+
+        memmove(&allocations->small_ranges[entry], &allocations->small_ranges[entry + 1],
+                (allocations->small_count - entry - 1) * sizeof(SmallRange));
+        allocations->small_count--;
+        g->state->live--;
         return true;
     }
 
     size_t va = (ptr - g->base) / MG_PAGE;
 
-    if (g->state->recording) {
-        VirtualPage *first = &allocations->virtual_pages[va];
-        RETURN_G_FAILED(first->owner != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
-
-        for (size_t j = 0; j < first->va_span; j++) {
-            allocations->physical_live[g->va_phys[va + j]] = false;
+    if (!g->state->recording) {
+        Event *match = find_event(g, EV_FREE, va, 0, NULL);
+        if (match) {
+            g->state->cursor = match;
+            return true;
         }
-        g->state->live -= first->va_span;
-        first->va_span = 0;
-        first->owner = 0;
-    } else {
-        event(g, EV_FREE, va, 0);
+        RETURN_G_FAILED(!start_recording(g), true);
+        allocations = g->allocations;
     }
+
+    VirtualPage *first = &allocations->virtual_pages[va];
+    RETURN_G_FAILED(first->owner != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
+
+    for (size_t j = 0; j < first->va_span; j++) {
+        allocations->physical_live[g->va_phys[va + j]] = false;
+    }
+    g->state->live -= first->va_span;
+    first->va_span = 0;
+    first->owner = 0;
     return true;
 }
 
@@ -513,6 +572,7 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
         g->va_phys[i] = -1;
     }
 
+    g->materialized = true;
     if (!push_stack(g, &g->root, true)) {
         goto fail_small_address;
     }
@@ -546,42 +606,46 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
         return 0;
     }
 
-    Event *scope;
-    bool recording = g->state->recording;
-
-    if (recording) {
-        recording = g->state->cursor->type != EV_CALL || strcmp(g->state->cursor->name, name);
-
-        if (recording) {
-            Event *call = calloc(1, sizeof(*call));
-            scope = calloc(1, sizeof(*scope));
-
-            if (!call || !scope) {
-                free(call);
-                free(scope);
-                g->failed = true;
-                return 0;
-            }
-
-            call->type = EV_CALL;
-            call->scope = scope;
-            call->name = strdup(name);
-            if (!append_event(g, g->state->cursor, call)) {
-                free(call->name);
-                free(call);
-                free(scope);
-                return 0;
-            }
-            g->state->cursor = call;
-        } else {
-            scope = g->state->cursor->scope;
+    Event *call = NULL;
+    if (g->state->recording) {
+        if (event_matches(g->state->cursor, EV_CALL, 0, 0, name)) {
+            call = g->state->cursor;
         }
     } else {
-        Event *event = next_event(g, name);
+        call = find_event(g, EV_CALL, 0, 0, name);
+        if (call) {
+            g->state->cursor = call;
+        }
+    }
 
-        RETURN_G_FAILED(!event, 0);
-        g->state->cursor = event;
-        scope = event->scope;
+    bool recording = !call;
+    Event *scope;
+    if (recording) {
+        if (!g->state->recording && !start_recording(g)) {
+            return 0;
+        }
+
+        call = calloc(1, sizeof(*call));
+        scope = calloc(1, sizeof(*scope));
+        if (!call || !scope) {
+            free(call);
+            free(scope);
+            g->failed = true;
+            return 0;
+        }
+
+        call->type = EV_CALL;
+        call->scope = scope;
+        call->name = strdup(name);
+        if (!append_event(g, g->state->cursor, call)) {
+            free(call->name);
+            free(call);
+            free(scope);
+            return 0;
+        }
+        g->state->cursor = call;
+    } else {
+        scope = call->scope;
     }
 
     if (!push_stack(g, scope, recording)) {
@@ -597,14 +661,29 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
         return false;
     }
 
-    RETURN_G_FAILED(g->state->live || (!g->state->recording && next_event(g, NULL)), false);
-
     State *state = g->state;
+    if (!state->recording) {
+        Event *terminal = find_terminal(state->cursor);
+        if (terminal) {
+            state->cursor = terminal;
+        } else if (!start_recording(g)) {
+            return false;
+        }
+    }
+    RETURN_G_FAILED(state->live, false);
+    if (state->recording) {
+        state->cursor->terminal = true;
+    }
+
     g->state = state->next;
+    if (!state->materialized_at_entry) {
+        g->materialized = false;
+    }
     free(state);
 
     if (!g->state) {
         g->complete = true;
+        g->materialized = false;
         active_graph = NULL;
     }
     return true;
@@ -617,6 +696,7 @@ SHARED_EXPORT bool malloc_graph_replay(void *handle) {
         return false;
     }
     g->complete = false;
+    g->materialized = false;
     active_graph = g;
     return true;
 }
