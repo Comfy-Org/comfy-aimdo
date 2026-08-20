@@ -39,7 +39,8 @@ struct Event {
         };
     };
 
-    Event *next;
+    Event **next;
+    size_t next_count;
     Event *previous;
     AllocationState *snapshot;
 };
@@ -130,13 +131,24 @@ static bool restore_allocations(MallocGraph *g, AllocationState *snapshot) {
     return true;
 }
 
+static bool append_event(MallocGraph *g, Event *parent, Event *event) {
+    Event **next = realloc(parent->next, (parent->next_count + 1) * sizeof(*next));
+    RETURN_G_FAILED(!next, false);
+    parent->next = next;
+    parent->next[parent->next_count++] = event;
+    event->previous = parent;
+    return true;
+}
+
 static Event *next_event(MallocGraph *g, const char *name) {
     Event *event = g->state->cursor;
 
     if (name && event->type == EV_CALL && !strcmp(event->name, name)) {
         return event;
     }
-    for (event = event->next; event && event->type == EV_CALL; event = event->next) {
+    for (event = event->next_count ? event->next[0] : NULL;
+         event && event->type == EV_CALL;
+         event = event->next_count ? event->next[0] : NULL) {
         if (name && !strcmp(event->name, name)) {
             return event;
         }
@@ -153,8 +165,10 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
         e->type = type;
         e->value = value;
         e->bytes = bytes;
-        e->previous = g->state->cursor;
-        g->state->cursor->next = e;
+        if (!append_event(g, g->state->cursor, e)) {
+            free(e);
+            return NULL;
+        }
     } else {
         e = next_event(g, NULL);
         RETURN_G_FAILED(!e || e->type != type || e->value != value || e->bytes != bytes, NULL);
@@ -552,8 +566,12 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
             call->type = EV_CALL;
             call->scope = scope;
             call->name = strdup(name);
-            call->previous = g->state->cursor;
-            g->state->cursor->next = call;
+            if (!append_event(g, g->state->cursor, call)) {
+                free(call->name);
+                free(call);
+                free(scope);
+                return 0;
+            }
             g->state->cursor = call;
         } else {
             scope = g->state->cursor->scope;
@@ -614,21 +632,21 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
                        : g->phys_count + g->small_pages) * MG_PAGE;
 }
 
-static void free_events(Event *event) {
-    while (event) {
-        Event *next = event->next;
-
+static void free_events(Event **events, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        Event *event = events[i];
+        free_events(event->next, event->next_count);
         if (event->type == EV_CALL) {
             Event *scope = event->scope;
-            free_events(scope->next);
+            free_events(scope->next, scope->next_count);
             free(scope->snapshot);
             free(scope);
             free(event->name);
         }
 
         free(event);
-        event = next;
     }
+    free(events);
 }
 
 SHARED_EXPORT void malloc_graph_destroy(void *handle) {
@@ -669,6 +687,6 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
 
     free(g->root.snapshot);
     free(g->allocations);
-    free_events(g->root.next);
+    free_events(g->root.next, g->root.next_count);
     free(g);
 }
