@@ -23,9 +23,10 @@ class MallocGraph:
         return recording
 
     def pop(self):
-        self._call(control.lib.malloc_graph_pop)
+        broken = self._call(control.lib.malloc_graph_pop) == 2
         if self._scopes:
             self._scopes.pop()
+        return broken
 
     def pause(self):
         self._call(control.lib.malloc_graph_pause, True)
@@ -34,15 +35,16 @@ class MallocGraph:
         self._call(control.lib.malloc_graph_pause, False)
 
     def iterate(self, name=None):
+        broken = False
         if name is None:
             if self._scopes:
-                self.pop()
-            return False
+                broken = self.pop()
+            return broken
         if self._scopes and self._scopes[-1] == name:
-            self.pop()
-        recording = self.push(name)
+            broken = self.pop()
+        self.push(name)
         self._scopes[-1] = name
-        return recording
+        return broken
 
     def _stat(self, which):
         return control.lib.malloc_graph_stat(self._handle, which)
@@ -58,21 +60,22 @@ class MallocGraph:
             self._handle = None
 
 
-def record(stream):
+def record(stream, assert_graph_breaks=False):
     lib = control.lib
-    lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
     lib.malloc_graph_create.restype = ctypes.c_void_p
     lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.malloc_graph_push.restype = ctypes.c_int
     lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
     lib.malloc_graph_pause.restype = ctypes.c_bool
     lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
-    lib.malloc_graph_pop.restype = ctypes.c_bool
+    lib.malloc_graph_pop.restype = ctypes.c_int
     lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.malloc_graph_stat.restype = ctypes.c_uint64
     lib.malloc_graph_destroy.argtypes = [ctypes.c_void_p]
     handle = control.lib.malloc_graph_create(
-        control.get_devctx(stream.device.index), ctypes.c_void_p(stream.cuda_stream)
+        control.get_devctx(stream.device.index), ctypes.c_void_p(stream.cuda_stream),
+        assert_graph_breaks,
     )
     if not handle:
         raise RuntimeError("aimdo memory compile error: could not start recording")
