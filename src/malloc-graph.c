@@ -24,7 +24,7 @@ typedef enum {
 
 typedef struct Event Event;
 typedef struct State State;
-typedef struct SmallRange SmallRange;
+typedef struct AllocationState AllocationState;
 
 struct Event {
     EventType type;
@@ -40,6 +40,7 @@ struct Event {
     };
 
     Event *next;
+    AllocationState *snapshot;
 };
 
 struct State {
@@ -56,12 +57,17 @@ typedef struct {
     uint32_t owner;
 } VirtualPage;
 
-struct SmallRange {
+typedef struct {
     size_t offset;
     size_t bytes;
     uint32_t owner;
+} SmallRange;
 
-    SmallRange *next;
+struct AllocationState {
+    VirtualPage virtual_pages[MG_PAGES];
+    bool physical_live[MG_PAGES];
+    size_t small_count;
+    SmallRange small_ranges[];
 };
 
 typedef struct {
@@ -73,12 +79,11 @@ typedef struct {
     Event root;
     State *state;
 
-    VirtualPage virtual_pages[MG_PAGES];
+    AllocationState *allocations;
+    size_t small_capacity;
     int va_phys[MG_PAGES];
-    bool physical_live[MG_PAGES];
     CUmemGenericAllocationHandle physical_handles[MG_PAGES];
     CUmemGenericAllocationHandle small_handles[MG_SMALL_PAGES];
-    SmallRange *small_ranges;
 
     size_t va_count;
     size_t phys_count;
@@ -91,6 +96,31 @@ typedef struct {
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
+
+static size_t allocation_state_size(size_t small_count) {
+    return sizeof(AllocationState) + small_count * sizeof(SmallRange);
+}
+
+static bool reserve_small_ranges(MallocGraph *g, size_t count) {
+    if (count <= g->small_capacity) {
+        return true;
+    }
+
+    size_t capacity = MAX(count, g->small_capacity * 2);
+    AllocationState *allocations = realloc(g->allocations, allocation_state_size(capacity));
+    RETURN_G_FAILED(!allocations, false);
+    g->allocations = allocations;
+    g->small_capacity = capacity;
+    return true;
+}
+
+static AllocationState *snapshot_allocations(MallocGraph *g) {
+    size_t size = allocation_state_size(g->allocations->small_count);
+    AllocationState *snapshot = malloc(size);
+    RETURN_G_FAILED(!snapshot, NULL);
+    memcpy(snapshot, g->allocations, size);
+    return snapshot;
+}
 
 static Event *next_event(MallocGraph *g, const char *name) {
     Event *event = g->state->cursor;
@@ -127,6 +157,13 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
     State *state = malloc(sizeof(*state));
     RETURN_G_FAILED(!state, false);
+    if (recording && !scope->snapshot) {
+        scope->snapshot = snapshot_allocations(g);
+        if (!scope->snapshot) {
+            free(state);
+            return false;
+        }
+    }
     *state = (State){.cursor = scope, .depth = g->state ? g->state->depth + 1 : 1,
                      .recording = recording, .next = g->state};
     g->state = state;
@@ -181,6 +218,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 
     *ptr = 0;
     size_t va = 0;
+    AllocationState *allocations = g->allocations;
 
     if (!g->state->recording) {
         EventType type = size < MG_SMALL_LIMIT ? EV_ALLOC_SMALL : EV_ALLOC;
@@ -198,26 +236,22 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         size_t offset = g->small_size;
         size_t smallest_hole = SIZE_MAX;
         size_t previous_end = 0;
-        SmallRange **prev_range_next = &g->small_ranges;
-        SmallRange **insert_at = NULL;
+        size_t insert_at = allocations->small_count;
 
-        for (SmallRange *range = g->small_ranges; range; range = range->next) {
+        for (size_t i = 0; i < allocations->small_count; i++) {
+            SmallRange *range = &allocations->small_ranges[i];
             size_t hole = range->offset - previous_end;
             if (hole >= bytes && hole < smallest_hole) {
                 offset = previous_end;
                 smallest_hole = hole;
-                insert_at = prev_range_next;
+                insert_at = i;
             }
             previous_end = range->offset + range->bytes;
-            prev_range_next = &range->next;
         }
         size_t hole = g->small_size - previous_end;
         if (hole >= bytes && hole < smallest_hole) {
             offset = previous_end;
-            insert_at = prev_range_next;
-        }
-        if (!insert_at) {
-            insert_at = prev_range_next;
+            insert_at = allocations->small_count;
         }
 
         size_t end = offset + bytes;
@@ -239,11 +273,13 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
             g->small_size = end;
         }
 
-        SmallRange *range = malloc(sizeof(*range));
-        RETURN_G_FAILED(!range, true);
-        *range = (SmallRange){.offset = offset, .bytes = bytes,
-                              .owner = g->state->depth, .next = *insert_at};
-        *insert_at = range;
+        RETURN_G_FAILED(!reserve_small_ranges(g, allocations->small_count + 1), true);
+        allocations = g->allocations;
+        memmove(&allocations->small_ranges[insert_at + 1], &allocations->small_ranges[insert_at],
+                (allocations->small_count - insert_at) * sizeof(SmallRange));
+        allocations->small_ranges[insert_at] = (SmallRange){
+            .offset = offset, .bytes = bytes, .owner = g->state->depth};
+        allocations->small_count++;
 
         event(g, EV_ALLOC_SMALL, offset, size);
         g->state->live++;
@@ -256,7 +292,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     while (va + pages <= g->va_count) {
         size_t j;
         for (j = 0; j < pages; j++) {
-            if (g->physical_live[g->va_phys[va + j]]) {
+            if (allocations->physical_live[g->va_phys[va + j]]) {
                 break;
             }
         }
@@ -276,17 +312,17 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     for (size_t j = 0; j < pages; j++) {
         if (g->va_phys[va + j] < 0) {
             size_t p = 0;
-            while (p < g->phys_count && g->physical_live[p]) {
+            while (p < g->phys_count && allocations->physical_live[p]) {
                 p++;
             }
             RETURN_G_FAILED(map_page(g, va + j, p), true);
         }
-        g->physical_live[g->va_phys[va + j]] = true;
+        allocations->physical_live[g->va_phys[va + j]] = true;
     }
 
     event(g, EV_ALLOC, va, size);
-    g->virtual_pages[va].va_span = pages;
-    g->virtual_pages[va].owner = g->state->depth;
+    allocations->virtual_pages[va].va_span = pages;
+    allocations->virtual_pages[va].owner = g->state->depth;
     g->state->live += pages;
     *ptr = g->base + va * MG_PAGE;
     return true;
@@ -299,6 +335,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         return false;
     }
 
+    AllocationState *allocations = g->allocations;
     bool small = ptr >= g->small_base && ptr < g->small_base + MG_SMALL_PAGES * MG_PAGE;
     if (!small && (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE)) {
         RETURN_G_FAILED(size, false);
@@ -310,16 +347,17 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         size_t offset = ptr - g->small_base;
 
         if (g->state->recording) {
-            SmallRange **entry = &g->small_ranges;
-            while (*entry && (*entry)->offset != offset) {
-                entry = &(*entry)->next;
+            size_t entry = 0;
+            while (entry < allocations->small_count && allocations->small_ranges[entry].offset != offset) {
+                entry++;
             }
-            RETURN_G_FAILED(!*entry || (*entry)->owner != g->state->depth ||
+            RETURN_G_FAILED(entry == allocations->small_count ||
+                            allocations->small_ranges[entry].owner != g->state->depth ||
                             !event(g, EV_FREE_SMALL, offset, 0), true);
 
-            SmallRange *range = *entry;
-            *entry = range->next;
-            free(range);
+            memmove(&allocations->small_ranges[entry], &allocations->small_ranges[entry + 1],
+                    (allocations->small_count - entry - 1) * sizeof(SmallRange));
+            allocations->small_count--;
             g->state->live--;
         } else {
             event(g, EV_FREE_SMALL, offset, 0);
@@ -330,11 +368,11 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
     size_t va = (ptr - g->base) / MG_PAGE;
 
     if (g->state->recording) {
-        VirtualPage *first = &g->virtual_pages[va];
+        VirtualPage *first = &allocations->virtual_pages[va];
         RETURN_G_FAILED(first->owner != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
 
         for (size_t j = 0; j < first->va_span; j++) {
-            g->physical_live[g->va_phys[va + j]] = false;
+            allocations->physical_live[g->va_phys[va + j]] = false;
         }
         g->state->live -= first->va_span;
         first->va_span = 0;
@@ -351,6 +389,10 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
     if (!g || active_graph) {
         free(g);
         return NULL;
+    }
+    g->allocations = calloc(1, sizeof(*g->allocations));
+    if (!g->allocations) {
+        goto fail;
     }
 
     set_devctx(devctx);
@@ -379,6 +421,7 @@ fail_small_address:
 fail_address:
     cuMemAddressFree(g->base, MG_PAGES * MG_PAGE);
 fail:
+    free(g->allocations);
     free(g);
     return NULL;
 }
@@ -488,6 +531,7 @@ static void free_events(Event *event) {
         if (event->type == EV_CALL) {
             Event *scope = event->scope;
             free_events(scope->next);
+            free(scope->snapshot);
             free(scope);
             free(event->name);
         }
@@ -533,12 +577,8 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     cuMemAddressFree(g->small_base, MG_SMALL_PAGES * MG_PAGE);
     total_vram_usage -= (g->phys_count + g->small_pages) * MG_PAGE;
 
-    while (g->small_ranges) {
-        SmallRange *range = g->small_ranges;
-        g->small_ranges = range->next;
-        free(range);
-    }
-
+    free(g->root.snapshot);
+    free(g->allocations);
     free_events(g->root.next);
     free(g);
 }
