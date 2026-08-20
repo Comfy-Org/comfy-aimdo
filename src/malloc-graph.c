@@ -148,24 +148,17 @@ static Event *find_event(MallocGraph *g, EventType type, size_t value, size_t by
 }
 
 static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) {
-    Event *e;
-
-    if (g->state->recording) {
-        e = calloc(1, sizeof(*e));
-        RETURN_G_FAILED(!e, NULL);
-        e->type = type;
-        e->value = value;
-        e->bytes = bytes;
-        if (!append_event(g, g->state->cursor, e)) {
-            free(e);
-            return NULL;
-        }
-    } else {
-        e = find_event(g, type, value, bytes, NULL);
-        RETURN_G_FAILED(!e, NULL);
+    Event *event = calloc(1, sizeof(*event));
+    RETURN_G_FAILED(!event, NULL);
+    event->type = type;
+    event->value = value;
+    event->bytes = bytes;
+    if (!append_event(g, g->state->cursor, event)) {
+        free(event);
+        return NULL;
     }
-    g->state->cursor = e;
-    return e;
+    g->state->cursor = event;
+    return event;
 }
 
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
@@ -286,6 +279,14 @@ static bool materialize(MallocGraph *g, Event *event) {
     return materialize(g, event->previous) && dry_apply(g, event);
 }
 
+static bool start_recording(MallocGraph *g) {
+    if (!materialize(g, g->state->cursor)) {
+        return false;
+    }
+    g->state->recording = true;
+    return true;
+}
+
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
@@ -299,12 +300,14 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     if (!g->state->recording) {
         EventType type = size < MG_SMALL_LIMIT ? EV_ALLOC_SMALL : EV_ALLOC;
         Event *match = find_event(g, type, 0, size, NULL);
-        RETURN_G_FAILED(!match, true);
-        g->state->cursor = match;
-        *ptr = type == EV_ALLOC_SMALL
-            ? g->small_base + match->value
-            : g->base + match->value * MG_PAGE;
-        return true;
+        if (match) {
+            g->state->cursor = match;
+            *ptr = type == EV_ALLOC_SMALL
+                ? g->small_base + match->value
+                : g->base + match->value * MG_PAGE;
+            return true;
+        }
+        RETURN_G_FAILED(!start_recording(g), true);
     }
 
     if (size < MG_SMALL_LIMIT) {
@@ -312,26 +315,26 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         size_t offset = g->small_size;
         size_t smallest_hole = SIZE_MAX;
         size_t previous_end = 0;
-        SmallRange **prev_range_next = &g->small_ranges;
         SmallRange **insert_at = NULL;
+        SmallRange **previous_next = &g->small_ranges;
 
         for (SmallRange *range = g->small_ranges; range; range = range->next) {
             size_t hole = range->offset - previous_end;
             if (hole >= bytes && hole < smallest_hole) {
                 offset = previous_end;
                 smallest_hole = hole;
-                insert_at = prev_range_next;
+                insert_at = previous_next;
             }
             previous_end = range->offset + range->bytes;
-            prev_range_next = &range->next;
+            previous_next = &range->next;
         }
         size_t hole = g->small_size - previous_end;
         if (hole >= bytes && hole < smallest_hole) {
             offset = previous_end;
-            insert_at = prev_range_next;
+            insert_at = previous_next;
         }
         if (!insert_at) {
-            insert_at = prev_range_next;
+            insert_at = previous_next;
         }
 
         size_t end = offset + bytes;
@@ -419,43 +422,42 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         return false;
     }
 
+    size_t value = small ? ptr - g->small_base : (ptr - g->base) / MG_PAGE;
+
     *result = 0;
-    if (small) {
-        size_t offset = ptr - g->small_base;
-
-        if (g->state->recording) {
-            SmallRange **entry = &g->small_ranges;
-            while (*entry && (*entry)->offset != offset) {
-                entry = &(*entry)->next;
-            }
-            RETURN_G_FAILED(!*entry || (*entry)->owner_depth != g->state->depth ||
-                            !event(g, EV_FREE_SMALL, offset, 0), true);
-
-            SmallRange *range = *entry;
-            *entry = range->next;
-            free(range);
-            g->state->live--;
-        } else {
-            event(g, EV_FREE_SMALL, offset, 0);
+    if (!g->state->recording) {
+        EventType type = small ? EV_FREE_SMALL : EV_FREE;
+        Event *match = find_event(g, type, value, 0, NULL);
+        if (match) {
+            g->state->cursor = match;
+            return true;
         }
+        RETURN_G_FAILED(!start_recording(g), true);
+    }
+
+    if (small) {
+        SmallRange **entry = &g->small_ranges;
+        while (*entry && (*entry)->offset != value) {
+            entry = &(*entry)->next;
+        }
+        RETURN_G_FAILED(!*entry || (*entry)->owner_depth != g->state->depth ||
+                        !event(g, EV_FREE_SMALL, value, 0), true);
+
+        SmallRange *range = *entry;
+        *entry = range->next;
+        free(range);
+        g->state->live--;
         return true;
     }
 
-    size_t va = (ptr - g->base) / MG_PAGE;
+    VirtualPage *first = &g->allocations.virtual_pages[value];
+    RETURN_G_FAILED(first->owner_depth != g->state->depth || !first->va_span || !event(g, EV_FREE, value, 0), true);
 
-    if (g->state->recording) {
-        VirtualPage *first = &g->allocations.virtual_pages[va];
-        RETURN_G_FAILED(first->owner_depth != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
-
-        for (size_t j = 0; j < first->va_span; j++) {
-            g->allocations.physical_live[g->va_phys[va + j]] = false;
-        }
-        g->state->live -= first->va_span;
-        first->va_span = 0;
-        first->owner_depth = 0;
-    } else {
-        event(g, EV_FREE, va, 0);
+    for (size_t j = 0; j < first->va_span; j++) {
+        g->allocations.physical_live[g->va_phys[value + j]] = false;
     }
+    g->state->live -= first->va_span;
+    *first = (VirtualPage){};
     return true;
 }
 
@@ -521,7 +523,9 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
     bool recording = !call;
     Event *scope;
     if (recording) {
-        RETURN_G_FAILED(!g->state->recording, 0);
+        if (!g->state->recording && !start_recording(g)) {
+            return 0;
+        }
 
         char *call_name = NULL;
         scope = NULL;
@@ -558,8 +562,11 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
 
     if (!g->state->recording) {
         Event *end = find_event(g, EV_END, 0, 0, NULL);
-        RETURN_G_FAILED(!end, false);
-        g->state->cursor = end;
+        if (end) {
+            g->state->cursor = end;
+        } else if (!start_recording(g)) {
+            return false;
+        }
     }
     RETURN_G_FAILED(g->state->live, false);
     RETURN_G_FAILED(g->state->recording && !event(g, EV_END, 0, 0), false);

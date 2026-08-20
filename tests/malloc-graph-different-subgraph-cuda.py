@@ -1,10 +1,6 @@
-import os
-
 import comfy_aimdo.control as aimdo
 import torch
 
-
-ERROR = "aimdo memory compile error"
 
 assert aimdo.init("cuda")
 assert aimdo.init_device(torch.cuda.current_device())
@@ -15,11 +11,10 @@ graph.push("first")
 graph.pop()
 graph.pop()
 
-graph.replay()
-try:
-    graph.push("second")
-except RuntimeError as error:
-    assert ERROR in str(error)
-    print(f"Different subgraph: {error}", flush=True)
-    os._exit(0)
-raise AssertionError(f"changing a subgraph did not raise {ERROR}")
+for name in ("second", "first", "second"):
+    graph.replay()
+    graph.push(name)
+    graph.pop()
+    graph.pop()
+
+print("Different subgraph branch test passed")
