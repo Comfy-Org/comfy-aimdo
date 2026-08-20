@@ -16,7 +16,7 @@ assert not graph.push("empty")
 graph.pop()
 graph.pop()
 
-graph.replay()
+graph.push()
 assert not graph.push("empty")
 graph.pop()
 assert not graph.push("empty")

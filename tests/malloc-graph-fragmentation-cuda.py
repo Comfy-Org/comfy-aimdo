@@ -27,7 +27,7 @@ assert graph.peak_used == 40 * M
 assert graph.virtual_bytes == 56 * M
 assert graph.physical_bytes == 40 * M
 
-graph.replay()
+graph.push()
 first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 hole = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 last = torch.empty(8 * M, dtype=torch.uint8, device="cuda")

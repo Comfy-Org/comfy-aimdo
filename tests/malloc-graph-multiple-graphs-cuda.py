@@ -22,13 +22,13 @@ second_pointer = second.data_ptr()
 del second
 second_graph.pop()
 
-first_graph.replay()
+first_graph.push()
 first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert first.data_ptr() == first_pointer
 del first
 first_graph.pop()
 
-second_graph.replay()
+second_graph.push()
 second = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 assert second.data_ptr() == second_pointer
 del second

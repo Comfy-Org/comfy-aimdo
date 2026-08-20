@@ -14,12 +14,12 @@ for _ in range(2):
     del value
 graph.pop()
 
-graph.replay()
+graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del value
 graph.pop()
 
-graph.replay()
+graph.push()
 for _ in range(2):
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value

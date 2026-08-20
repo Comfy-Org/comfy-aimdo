@@ -14,18 +14,18 @@ class MallocGraph:
             raise RuntimeError("aimdo memory compile error")
         return result
 
-    def push(self, name):
-        recording = self._call(control.lib.malloc_graph_push, name.encode()) == 2
-        self._scopes.append(None)
+    def push(self, name=None):
+        recording = self._call(
+            control.lib.malloc_graph_push, name.encode() if name is not None else None
+        ) == 2
+        if name is not None:
+            self._scopes.append(None)
         return recording
 
     def pop(self):
         self._call(control.lib.malloc_graph_pop)
         if self._scopes:
             self._scopes.pop()
-
-    def replay(self):
-        self._call(control.lib.malloc_graph_replay)
 
     def pause(self):
         self._call(control.lib.malloc_graph_pause, True)
@@ -66,8 +66,8 @@ def record(stream):
     lib.malloc_graph_push.restype = ctypes.c_int
     lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
     lib.malloc_graph_pause.restype = ctypes.c_bool
-    lib.malloc_graph_pop.argtypes = lib.malloc_graph_replay.argtypes = [ctypes.c_void_p]
-    lib.malloc_graph_pop.restype = lib.malloc_graph_replay.restype = ctypes.c_bool
+    lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_pop.restype = ctypes.c_bool
     lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.malloc_graph_stat.restype = ctypes.c_uint64
     lib.malloc_graph_destroy.argtypes = [ctypes.c_void_p]

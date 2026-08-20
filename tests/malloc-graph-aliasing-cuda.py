@@ -26,7 +26,7 @@ assert graph.peak_used == 32 * M
 assert graph.virtual_bytes == 48 * M
 assert graph.physical_bytes == 32 * M
 
-graph.replay()
+graph.push()
 live = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 freed = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 del freed

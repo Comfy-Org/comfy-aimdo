@@ -12,7 +12,7 @@ graph.pop()
 graph.pop()
 
 for name in ("second", "first", "second"):
-    graph.replay()
+    graph.push()
     graph.push(name)
     graph.pop()
     graph.pop()

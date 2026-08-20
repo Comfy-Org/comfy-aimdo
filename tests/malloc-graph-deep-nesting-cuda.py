@@ -20,7 +20,7 @@ graph.pop()
 graph.pop()
 graph.pop()
 
-graph.replay()
+graph.push()
 graph.push("outer")
 graph.push("inner")
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")

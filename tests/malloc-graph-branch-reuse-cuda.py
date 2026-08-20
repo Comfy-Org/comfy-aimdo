@@ -14,10 +14,10 @@ pointer = value.data_ptr()
 del value
 graph.pop()
 
-graph.replay()
+graph.push()
 graph.pop()
 
-graph.replay()
+graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert value.data_ptr() == pointer
 del value

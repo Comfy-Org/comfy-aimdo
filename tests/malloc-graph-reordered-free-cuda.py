@@ -15,7 +15,7 @@ del first
 del second
 graph.pop()
 
-graph.replay()
+graph.push()
 first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 del second

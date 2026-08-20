@@ -32,7 +32,7 @@ graph.iterate()
 graph.pop()
 graph.pop()
 
-graph.replay()
+graph.push()
 assert not graph.push("wrapper")
 for _ in range(2):
     assert not graph.iterate("outer")

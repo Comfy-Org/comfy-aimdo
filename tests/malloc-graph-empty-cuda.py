@@ -18,7 +18,7 @@ graph.pop()
 assert graph.virtual_bytes == 0
 assert graph.physical_bytes == 0
 
-graph.replay()
+graph.push()
 empty = torch.empty(0, device="cuda")
 assert empty.data_ptr() == 0
 del empty

@@ -602,7 +602,19 @@ SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused) {
 SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
     MallocGraph *g = handle;
 
-    if (!g || g != active_graph || g->failed) {
+    if (!g || g->failed) {
+        return 0;
+    }
+    if (!name) {
+        if (!g->complete || active_graph || !push_stack(g, &g->root, false)) {
+            return 0;
+        }
+        g->complete = false;
+        g->materialized = false;
+        active_graph = g;
+        return 1;
+    }
+    if (g != active_graph) {
         return 0;
     }
 
@@ -686,18 +698,6 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
         g->materialized = false;
         active_graph = NULL;
     }
-    return true;
-}
-
-SHARED_EXPORT bool malloc_graph_replay(void *handle) {
-    MallocGraph *g = handle;
-
-    if (!g || g->failed || !g->complete || active_graph || !push_stack(g, &g->root, false)) {
-        return false;
-    }
-    g->complete = false;
-    g->materialized = false;
-    active_graph = g;
     return true;
 }
 

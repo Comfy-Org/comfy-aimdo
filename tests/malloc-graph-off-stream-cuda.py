@@ -20,7 +20,7 @@ other.synchronize()
 
 assert graph.virtual_bytes == 0
 assert graph.physical_bytes == 0
-graph.replay()
+graph.push()
 graph.pop()
 
 del graph
