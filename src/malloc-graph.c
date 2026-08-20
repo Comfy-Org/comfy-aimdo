@@ -56,11 +56,6 @@ typedef struct {
     State *owner;
 } VirtualPage;
 
-typedef struct {
-    bool live;
-    CUmemGenericAllocationHandle handle;
-} PhysicalPage;
-
 struct SmallRange {
     size_t offset;
     size_t bytes;
@@ -79,7 +74,8 @@ typedef struct {
     State *state;
 
     VirtualPage virtual_pages[MG_PAGES];
-    PhysicalPage physical_pages[MG_PAGES];
+    bool physical_live[MG_PAGES];
+    CUmemGenericAllocationHandle physical_handles[MG_PAGES];
     CUmemGenericAllocationHandle small_handles[MG_SMALL_PAGES];
     SmallRange *small_ranges;
 
@@ -159,14 +155,14 @@ static int map_page(MallocGraph *g, size_t va, size_t phys) {
     CUresult r;
 
     if (phys == g->phys_count) {
-        r = create_page(g, &g->physical_pages[phys].handle);
+        r = create_page(g, &g->physical_handles[phys]);
         if (r) {
             return r;
         }
         g->phys_count++;
     }
 
-    if ((r = cuMemMap(addr, MG_PAGE, 0, g->physical_pages[phys].handle, 0)) ||
+    if ((r = cuMemMap(addr, MG_PAGE, 0, g->physical_handles[phys], 0)) ||
         (r = cuMemSetAccess(addr, MG_PAGE, &access, 1))) {
         return r;
     }
@@ -259,7 +255,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         size_t j;
         for (j = 0; j < pages; j++) {
             VirtualPage *vpage = &g->virtual_pages[va + j];
-            if (g->physical_pages[vpage->phys].live) {
+            if (g->physical_live[vpage->phys]) {
                 break;
             }
         }
@@ -280,12 +276,12 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         VirtualPage *vpage = &g->virtual_pages[va + j];
         if (vpage->phys < 0) {
             size_t p = 0;
-            while (p < g->phys_count && g->physical_pages[p].live) {
+            while (p < g->phys_count && g->physical_live[p]) {
                 p++;
             }
             RETURN_G_FAILED(map_page(g, va + j, p), true);
         }
-        g->physical_pages[vpage->phys].live = true;
+        g->physical_live[vpage->phys] = true;
         vpage->owner = g->state;
     }
 
@@ -339,7 +335,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
 
         for (size_t j = 0; j < first->va_span; j++) {
             VirtualPage *vpage = &g->virtual_pages[va + j];
-            g->physical_pages[vpage->phys].live = false;
+            g->physical_live[vpage->phys] = false;
             vpage->owner = NULL;
         }
         g->state->live -= first->va_span;
@@ -526,7 +522,7 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     }
 
     for (size_t i = 0; i < g->phys_count; i++) {
-        cuMemRelease(g->physical_pages[i].handle);
+        cuMemRelease(g->physical_handles[i]);
     }
 
     for (size_t i = 0; i < g->small_pages; i++) {
