@@ -21,7 +21,7 @@ tail_pointer = tail.data_ptr()
 del tail, outer
 graph.pop()
 
-graph.replay()
+graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert outer.data_ptr() == outer_pointer
 graph.push("inner")
@@ -34,7 +34,7 @@ assert tail.data_ptr() == tail_pointer
 del tail, outer
 graph.pop()
 
-graph.replay()
+graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 graph.push("inner")
 inner = torch.empty(8 * M, dtype=torch.uint8, device="cuda")

@@ -14,14 +14,14 @@ first_pointer = value.data_ptr()
 del value
 graph.pop()
 
-graph.replay()
+graph.push()
 value = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 second_pointer = value.data_ptr()
 assert second_pointer != first_pointer
 del value
 graph.pop()
 
-graph.replay()
+graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert value.data_ptr() == first_pointer
 del value

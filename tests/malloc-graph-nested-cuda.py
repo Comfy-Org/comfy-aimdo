@@ -49,7 +49,7 @@ def outer():
 pointers = outer()
 graph.pop()
 
-graph.replay()
+graph.push()
 assert outer() == pointers
 graph.pop()
 

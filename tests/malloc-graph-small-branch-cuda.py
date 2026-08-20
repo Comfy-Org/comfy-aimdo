@@ -14,7 +14,7 @@ first_pointer = first.data_ptr()
 del first
 graph.pop()
 
-graph.replay()
+graph.push()
 first = torch.empty(1 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(2 * M, dtype=torch.uint8, device="cuda")
 assert first.data_ptr() == first_pointer
@@ -22,7 +22,7 @@ assert second.data_ptr() != first_pointer
 del second, first
 graph.pop()
 
-graph.replay()
+graph.push()
 first = torch.empty(1 * M, dtype=torch.uint8, device="cuda")
 assert first.data_ptr() == first_pointer
 del first

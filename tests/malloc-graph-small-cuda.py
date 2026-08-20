@@ -25,7 +25,7 @@ graph.pop()
 assert graph.virtual_bytes == 8 * M
 assert graph.physical_bytes == 8 * M
 
-graph.replay()
+graph.push()
 first = torch.empty(1 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(2 * M, dtype=torch.uint8, device="cuda")
 assert (first.data_ptr(), second.data_ptr()) == pointers

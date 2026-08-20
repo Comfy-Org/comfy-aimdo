@@ -23,7 +23,7 @@ iteration()
 graph.pop()
 
 for count in (0, 1, 3):
-    graph.replay()
+    graph.push()
     for _ in range(count):
         iteration()
     graph.pop()

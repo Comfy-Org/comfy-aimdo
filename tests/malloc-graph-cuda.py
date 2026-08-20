@@ -33,7 +33,7 @@ graph.pop()
 outside = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del outside
 
-graph.replay()
+graph.push()
 a = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 b = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 assert (a.data_ptr(), b.data_ptr()) == (a_ptr, b_ptr)

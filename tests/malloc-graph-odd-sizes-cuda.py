@@ -23,7 +23,7 @@ assert graph.peak_used == 32 * M
 assert graph.virtual_bytes == 48 * M
 assert graph.physical_bytes == 32 * M
 
-graph.replay()
+graph.push()
 first = torch.empty(8 * M + 1, dtype=torch.uint8, device="cuda")
 assert first.data_ptr() == first_pointer
 del first

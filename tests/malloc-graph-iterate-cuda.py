@@ -24,7 +24,7 @@ for iteration in range(3):
 graph.iterate()
 graph.pop()
 
-graph.replay()
+graph.push()
 for _ in range(2):
     assert not graph.iterate("block")
     value = torch.empty(1 * M, dtype=torch.uint8, device="cuda")

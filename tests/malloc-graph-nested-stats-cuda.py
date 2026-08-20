@@ -32,7 +32,7 @@ assert graph.peak_used == 24 * M
 assert graph.virtual_bytes == 24 * M
 assert graph.physical_bytes == 24 * M
 
-graph.replay()
+graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 inner()
 inner()

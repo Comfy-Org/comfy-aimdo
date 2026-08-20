@@ -15,7 +15,7 @@ graph.pop()
 
 other = torch.cuda.Stream()
 with torch.cuda.stream(other):
-    graph.replay()
+    graph.push()
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value
     graph.pop()

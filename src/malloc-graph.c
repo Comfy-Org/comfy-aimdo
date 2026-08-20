@@ -511,11 +511,22 @@ SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused) {
     return true;
 }
 
-SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
+SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
     MallocGraph *g = handle;
 
-    if (!g || g != active_graph || g->failed) {
-        return 0;
+    if (!g || g->failed) {
+        return false;
+    }
+    if (!name) {
+        if (!g->complete || active_graph || !push_stack(g, &g->root, false)) {
+            return false;
+        }
+        g->complete = false;
+        active_graph = g;
+        return true;
+    }
+    if (g != active_graph) {
+        return false;
     }
 
     Event *call = find_event(g, EV_CALL, 0, 0, name);
@@ -524,7 +535,7 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
     Event *scope;
     if (recording) {
         if (!g->state->recording && !start_recording(g)) {
-            return 0;
+            return false;
         }
 
         char *call_name = NULL;
@@ -537,7 +548,7 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
             free(call);
             free(scope);
             g->failed = true;
-            return 0;
+            return false;
         }
 
         call->type = EV_CALL;
@@ -547,10 +558,7 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
         scope = call->scope;
     }
 
-    if (!push_stack(g, scope, recording)) {
-        return 0;
-    }
-    return recording ? 2 : 1;
+    return push_stack(g, scope, recording);
 }
 
 SHARED_EXPORT bool malloc_graph_pop(void *handle) {
@@ -579,17 +587,6 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
         g->complete = true;
         active_graph = NULL;
     }
-    return true;
-}
-
-SHARED_EXPORT bool malloc_graph_replay(void *handle) {
-    MallocGraph *g = handle;
-
-    if (!g || g->failed || !g->complete || active_graph || !push_stack(g, &g->root, false)) {
-        return false;
-    }
-    g->complete = false;
-    active_graph = g;
     return true;
 }
 

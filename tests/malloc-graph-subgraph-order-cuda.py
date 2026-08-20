@@ -13,7 +13,7 @@ graph.push("second")
 graph.pop()
 graph.pop()
 
-graph.replay()
+graph.push()
 graph.push("second")
 graph.pop()
 graph.push("first")

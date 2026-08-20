@@ -11,7 +11,7 @@ assert aimdo.init_device(torch.cuda.current_device())
 torch.empty(1, device="cuda")
 
 graph = aimdo.record(torch.cuda.current_stream())
-assert graph.push("wrapper")
+graph.push("wrapper")
 outer_pointer = None
 inner_pointer = None
 for outer in range(2):
@@ -32,8 +32,8 @@ graph.iterate()
 graph.pop()
 graph.pop()
 
-graph.replay()
-assert not graph.push("wrapper")
+graph.push()
+graph.push("wrapper")
 for _ in range(2):
     assert not graph.iterate("outer")
     outer_value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")

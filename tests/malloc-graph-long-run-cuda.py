@@ -17,7 +17,7 @@ del value
 graph.pop()
 
 for _ in range(100):
-    graph.replay()
+    graph.push()
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     assert value.data_ptr() == pointer
     del value
