@@ -45,6 +45,7 @@ struct Event {
 struct State {
     Event *cursor;
     size_t live;
+    uint32_t depth;
     bool recording;
 
     State *next;
@@ -53,13 +54,13 @@ struct State {
 typedef struct {
     int phys;
     int va_span;
-    State *owner;
+    uint32_t owner;
 } VirtualPage;
 
 struct SmallRange {
     size_t offset;
     size_t bytes;
-    State *owner;
+    uint32_t owner;
 
     SmallRange *next;
 };
@@ -126,7 +127,8 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
     State *state = malloc(sizeof(*state));
     RETURN_G_FAILED(!state, false);
-    *state = (State){.cursor = scope, .recording = recording, .next = g->state};
+    *state = (State){.cursor = scope, .depth = g->state ? g->state->depth + 1 : 1,
+                     .recording = recording, .next = g->state};
     g->state = state;
     return true;
 }
@@ -240,7 +242,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         SmallRange *range = malloc(sizeof(*range));
         RETURN_G_FAILED(!range, true);
         *range = (SmallRange){.offset = offset, .bytes = bytes,
-                              .owner = g->state, .next = *insert_at};
+                              .owner = g->state->depth, .next = *insert_at};
         *insert_at = range;
 
         event(g, EV_ALLOC_SMALL, offset, size);
@@ -282,7 +284,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
             RETURN_G_FAILED(map_page(g, va + j, p), true);
         }
         g->physical_live[vpage->phys] = true;
-        vpage->owner = g->state;
+        vpage->owner = g->state->depth;
     }
 
     event(g, EV_ALLOC, va, size);
@@ -314,7 +316,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
             while (*entry && (*entry)->offset != offset) {
                 entry = &(*entry)->next;
             }
-            RETURN_G_FAILED(!*entry || (*entry)->owner != g->state ||
+            RETURN_G_FAILED(!*entry || (*entry)->owner != g->state->depth ||
                             !event(g, EV_FREE_SMALL, offset, 0), true);
 
             SmallRange *range = *entry;
@@ -331,12 +333,12 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
 
     if (g->state->recording) {
         VirtualPage *first = &g->virtual_pages[va];
-        RETURN_G_FAILED(first->owner != g->state || !first->va_span || !event(g, EV_FREE, va, 0), true);
+        RETURN_G_FAILED(first->owner != g->state->depth || !first->va_span || !event(g, EV_FREE, va, 0), true);
 
         for (size_t j = 0; j < first->va_span; j++) {
             VirtualPage *vpage = &g->virtual_pages[va + j];
             g->physical_live[vpage->phys] = false;
-            vpage->owner = NULL;
+            vpage->owner = 0;
         }
         g->state->live -= first->va_span;
         first->va_span = 0;
