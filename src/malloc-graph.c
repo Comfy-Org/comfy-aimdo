@@ -20,6 +20,7 @@ typedef enum {
     EV_ALLOC_SMALL,
     EV_FREE_SMALL,
     EV_CALL,
+    EV_END,
 } EventType;
 
 typedef struct Event Event;
@@ -40,7 +41,8 @@ struct Event {
         };
     };
 
-    Event *next;
+    Event **next;
+    size_t next_count;
     Event *previous;
     AllocationState *snapshot;
     SmallRange *small_snapshot;
@@ -120,18 +122,29 @@ static bool copy_small_ranges(SmallRange **copy, SmallRange *range) {
     return true;
 }
 
-static Event *next_event(MallocGraph *g, const char *name) {
-    Event *event = g->state->cursor;
+static bool append_event(MallocGraph *g, Event *parent, Event *event) {
+    Event **next = realloc(parent->next, (parent->next_count + 1) * sizeof(*next));
+    RETURN_G_FAILED(!next, false);
+    parent->next = next;
+    parent->next[parent->next_count++] = event;
+    event->previous = parent;
+    return true;
+}
 
-    if (name && event->type == EV_CALL && !strcmp(event->name, name)) {
+static Event *find_event(MallocGraph *g, EventType type, size_t value, size_t bytes, const char *name) {
+    Event *cursor = g->state->cursor;
+
+    for (size_t i = 0; i < cursor->next_count; i++) {
+        Event *event = cursor->next[i];
+        if (event->type != type ||
+            (type == EV_CALL && strcmp(event->name, name)) ||
+            (type != EV_CALL && event->bytes != bytes) ||
+            ((type == EV_FREE || type == EV_FREE_SMALL) && event->value != value)) {
+            continue;
+        }
         return event;
     }
-    for (event = event->next; event && event->type == EV_CALL; event = event->next) {
-        if (name && !strcmp(event->name, name)) {
-            return event;
-        }
-    }
-    return name ? NULL : event;
+    return NULL;
 }
 
 static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) {
@@ -143,11 +156,13 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
         e->type = type;
         e->value = value;
         e->bytes = bytes;
-        e->previous = g->state->cursor;
-        g->state->cursor->next = e;
+        if (!append_event(g, g->state->cursor, e)) {
+            free(e);
+            return NULL;
+        }
     } else {
-        e = next_event(g, NULL);
-        RETURN_G_FAILED(!e || e->type != type || e->value != value || e->bytes != bytes, NULL);
+        e = find_event(g, type, value, bytes, NULL);
+        RETURN_G_FAILED(!e, NULL);
     }
     g->state->cursor = e;
     return e;
@@ -283,12 +298,12 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 
     if (!g->state->recording) {
         EventType type = size < MG_SMALL_LIMIT ? EV_ALLOC_SMALL : EV_ALLOC;
-        Event *e = next_event(g, NULL);
-        RETURN_G_FAILED(!e || e->type != type || e->bytes != size, true);
-        g->state->cursor = e;
+        Event *match = find_event(g, type, 0, size, NULL);
+        RETURN_G_FAILED(!match, true);
+        g->state->cursor = match;
         *ptr = type == EV_ALLOC_SMALL
-            ? g->small_base + e->value
-            : g->base + e->value * MG_PAGE;
+            ? g->small_base + match->value
+            : g->base + match->value * MG_PAGE;
         return true;
     }
 
@@ -501,38 +516,31 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
         return 0;
     }
 
+    Event *call = find_event(g, EV_CALL, 0, 0, name);
+
+    bool recording = !call;
     Event *scope;
-    bool recording = g->state->recording;
-
     if (recording) {
-        recording = g->state->cursor->type != EV_CALL || strcmp(g->state->cursor->name, name);
+        RETURN_G_FAILED(!g->state->recording, 0);
 
-        if (recording) {
-            Event *call = calloc(1, sizeof(*call));
-            scope = calloc(1, sizeof(*scope));
-
-            if (!call || !scope) {
-                free(call);
-                free(scope);
-                g->failed = true;
-                return 0;
-            }
-
-            call->type = EV_CALL;
-            call->scope = scope;
-            call->name = strdup(name);
-            call->previous = g->state->cursor;
-            g->state->cursor->next = call;
-            g->state->cursor = call;
-        } else {
-            scope = g->state->cursor->scope;
+        char *call_name = NULL;
+        scope = NULL;
+        if (!(call = calloc(1, sizeof(*call))) ||
+            !(scope = calloc(1, sizeof(*scope))) ||
+            !(call_name = strdup(name)) ||
+            !append_event(g, g->state->cursor, call)) {
+            free(call_name);
+            free(call);
+            free(scope);
+            g->failed = true;
+            return 0;
         }
-    } else {
-        Event *event = next_event(g, name);
 
-        RETURN_G_FAILED(!event, 0);
-        g->state->cursor = event;
-        scope = event->scope;
+        call->type = EV_CALL;
+        call->scope = scope;
+        call->name = call_name;
+    } else {
+        scope = call->scope;
     }
 
     if (!push_stack(g, scope, recording)) {
@@ -548,7 +556,13 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
         return false;
     }
 
-    RETURN_G_FAILED(g->state->live || (!g->state->recording && next_event(g, NULL)), false);
+    if (!g->state->recording) {
+        Event *end = find_event(g, EV_END, 0, 0, NULL);
+        RETURN_G_FAILED(!end, false);
+        g->state->cursor = end;
+    }
+    RETURN_G_FAILED(g->state->live, false);
+    RETURN_G_FAILED(g->state->recording && !event(g, EV_END, 0, 0), false);
 
     State *state = g->state;
     g->state = state->next;
@@ -583,13 +597,13 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
                        : g->phys_count + g->small_pages) * MG_PAGE;
 }
 
-static void free_events(Event *event) {
-    while (event) {
-        Event *next = event->next;
-
+static void free_events(Event **events, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        Event *event = events[i];
+        free_events(event->next, event->next_count);
         if (event->type == EV_CALL) {
             Event *scope = event->scope;
-            free_events(scope->next);
+            free_events(scope->next, scope->next_count);
             free_small_ranges(scope->small_snapshot);
             free(scope->snapshot);
             free(scope);
@@ -597,8 +611,8 @@ static void free_events(Event *event) {
         }
 
         free(event);
-        event = next;
     }
+    free(events);
 }
 
 SHARED_EXPORT void malloc_graph_destroy(void *handle) {
@@ -640,6 +654,6 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     free_small_ranges(g->root.small_snapshot);
     free_small_ranges(g->small_ranges);
     free(g->root.snapshot);
-    free_events(g->root.next);
+    free_events(g->root.next, g->root.next_count);
     free(g);
 }
