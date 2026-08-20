@@ -12,19 +12,19 @@ graph = aimdo.record(torch.cuda.current_stream())
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 first_pointer = value.data_ptr()
 del value
-graph.pop()
+assert not graph.pop()
 
 graph.push()
 value = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 second_pointer = value.data_ptr()
 assert second_pointer != first_pointer
 del value
-graph.pop()
+assert graph.pop()
 
 graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert value.data_ptr() == first_pointer
 del value
-graph.pop()
+assert not graph.pop()
 
 print("Changed allocation size branch test passed")

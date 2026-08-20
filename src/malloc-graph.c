@@ -53,6 +53,7 @@ struct State {
     size_t live;
     uint32_t depth;
     bool recording;
+    bool broken;
 
     State *next;
 };
@@ -98,6 +99,7 @@ typedef struct {
     bool failed;
     bool complete;
     bool paused;
+    bool assert_breaks;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
@@ -280,10 +282,12 @@ static bool materialize(MallocGraph *g, Event *event) {
 }
 
 static bool start_recording(MallocGraph *g) {
+    RETURN_G_FAILED(g->assert_breaks, false);
     if (!materialize(g, g->state->cursor)) {
         return false;
     }
     g->state->recording = true;
+    g->state->broken = true;
     return true;
 }
 
@@ -461,7 +465,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
     return true;
 }
 
-SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
+SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream, bool assert_breaks) {
     MallocGraph *g = calloc(1, sizeof(*g));
 
     if (!g || active_graph) {
@@ -472,6 +476,7 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream) {
     set_devctx(devctx);
     g->stream = stream;
     g->device = g_devctx->_device_id;
+    g->assert_breaks = assert_breaks;
 
     if (cuMemAddressReserve(&g->base, MG_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
         goto fail;
@@ -561,7 +566,7 @@ SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
     return push_stack(g, scope, recording);
 }
 
-SHARED_EXPORT bool malloc_graph_pop(void *handle) {
+SHARED_EXPORT int malloc_graph_pop(void *handle) {
     MallocGraph *g = handle;
 
     if (!g || g != active_graph || g->failed) {
@@ -581,13 +586,14 @@ SHARED_EXPORT bool malloc_graph_pop(void *handle) {
 
     State *state = g->state;
     g->state = state->next;
+    int result = state->broken ? 2 : 1;
     free(state);
 
     if (!g->state) {
         g->complete = true;
         active_graph = NULL;
     }
-    return true;
+    return result;
 }
 
 SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
