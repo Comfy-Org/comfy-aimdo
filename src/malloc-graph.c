@@ -41,6 +41,7 @@ struct Event {
     };
 
     Event *next;
+    Event *previous;
     AllocationState *snapshot;
     SmallRange *small_snapshot;
 };
@@ -142,6 +143,7 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
         e->type = type;
         e->value = value;
         e->bytes = bytes;
+        e->previous = g->state->cursor;
         g->state->cursor->next = e;
     } else {
         e = next_event(g, NULL);
@@ -455,6 +457,7 @@ SHARED_EXPORT int malloc_graph_push(void *handle, const char *name) {
             call->type = EV_CALL;
             call->scope = scope;
             call->name = strdup(name);
+            call->previous = g->state->cursor;
             g->state->cursor->next = call;
             g->state->cursor = call;
         } else {
