@@ -377,12 +377,17 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     while (va + pages <= g->va_count) {
         size_t j;
         for (j = 0; j < pages; j++) {
-            if (g->allocations.physical_live[g->va_phys[va + j]]) {
+            int phys = g->va_phys[va + j];
+            if (g->allocations.physical_live[phys]) {
                 break;
             }
+            g->allocations.physical_live[phys] = true;
         }
         if (j == pages) {
             break;
+        }
+        for (size_t k = 0; k < j; k++) {
+            g->allocations.physical_live[g->va_phys[va + k]] = false;
         }
         va += j + 1;
     }
