@@ -521,6 +521,16 @@ SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused) {
     return true;
 }
 
+SHARED_EXPORT bool malloc_graph_set_stream(void *handle, CUstream stream) {
+    MallocGraph *g = handle;
+
+    if (!g || g != active_graph || g->failed) {
+        return false;
+    }
+    g->stream = stream;
+    return true;
+}
+
 SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
     MallocGraph *g = handle;
 
