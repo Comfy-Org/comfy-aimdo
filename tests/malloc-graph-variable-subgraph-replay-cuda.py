@@ -15,17 +15,17 @@ def iteration():
     graph.push("inner")
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value
-    graph.pop()
+    assert not graph.pop()
 
 
 iteration()
 iteration()
-graph.pop()
+assert not graph.pop()
 
 for count in (0, 1, 3):
     graph.push()
     for _ in range(count):
         iteration()
-    graph.pop()
+    assert not graph.pop()
 
 print("Variable subgraph replay test passed")
