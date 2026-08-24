@@ -71,20 +71,6 @@ class MallocGraph:
 
 
 def record(stream, assert_graph_breaks=False):
-    lib = control.lib
-    lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
-    lib.malloc_graph_create.restype = ctypes.c_void_p
-    lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-    lib.malloc_graph_push.restype = ctypes.c_bool
-    lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
-    lib.malloc_graph_pause.restype = ctypes.c_bool
-    lib.malloc_graph_set_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    lib.malloc_graph_set_stream.restype = ctypes.c_bool
-    lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
-    lib.malloc_graph_pop.restype = ctypes.c_int
-    lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
-    lib.malloc_graph_stat.restype = ctypes.c_uint64
-    lib.malloc_graph_destroy.argtypes = [ctypes.c_void_p]
     handle = control.lib.malloc_graph_create(
         control.get_devctx(stream.device.index), ctypes.c_void_p(stream.cuda_stream),
         assert_graph_breaks,

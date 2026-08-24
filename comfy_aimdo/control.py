@@ -110,6 +110,27 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
 
+    lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+    lib.malloc_graph_create.restype = ctypes.c_void_p
+
+    lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    lib.malloc_graph_push.restype = ctypes.c_bool
+
+    lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+    lib.malloc_graph_pause.restype = ctypes.c_bool
+
+    lib.malloc_graph_set_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    lib.malloc_graph_set_stream.restype = ctypes.c_bool
+
+    lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_pop.restype = ctypes.c_int
+
+    lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.malloc_graph_stat.restype = ctypes.c_uint64
+
+    lib.malloc_graph_destroy.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_destroy.restype = None
+
     if simple_vram_headroom is not None:
         lib.set_simple_vram_headroom(int(simple_vram_headroom))
     lib.set_nvml_pressure(bool(nvml_pressure))
