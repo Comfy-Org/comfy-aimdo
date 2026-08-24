@@ -28,16 +28,16 @@ inner()
 del outer
 graph.pop()
 
-assert graph.peak_used == 24 * M
-assert graph.virtual_bytes == 24 * M
-assert graph.physical_bytes == 24 * M
+stats = (graph.peak_used, graph.virtual_bytes, graph.physical_bytes)
+assert stats == (24 * M, 24 * M, 24 * M)
 
 graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 inner()
 inner()
 del outer
-graph.pop()
+assert not graph.pop()
+assert (graph.peak_used, graph.virtual_bytes, graph.physical_bytes) == stats
 
 del graph
 gc.collect()
