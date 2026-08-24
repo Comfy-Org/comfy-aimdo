@@ -97,6 +97,8 @@ typedef struct {
     size_t phys_count;
     size_t small_size;
     size_t small_pages;
+    size_t used;
+    size_t peak_used;
 
     bool failed;
     bool complete;
@@ -124,6 +126,25 @@ static bool copy_small_ranges(SmallRange **copy, SmallRange *range) {
         copy = &(*copy)->next;
     }
     return true;
+}
+
+static void add_used(MallocGraph *g, size_t bytes) {
+    g->used += bytes;
+    g->peak_used = MAX(g->peak_used, g->used);
+}
+
+static size_t allocation_used(MallocGraph *g) {
+    size_t used = 0;
+
+    for (size_t i = 0; i < g->phys_count; i++) {
+        if (g->allocations.physical_live[i]) {
+            used += MG_PAGE;
+        }
+    }
+    for (SmallRange *range = g->small_ranges; range; range = range->next) {
+        used += range->bytes;
+    }
+    return used;
 }
 
 static bool append_event(MallocGraph *g, Event *parent, Event *event) {
@@ -231,6 +252,7 @@ static bool dry_apply(MallocGraph *g, Event *event) {
                 .va_span = ALIGN_UP(event->bytes, MG_PAGE) / MG_PAGE,
                 .owner_depth = g->state->depth};
             g->state->live += first->va_span;
+            add_used(g, first->va_span * MG_PAGE);
         }
 
         for (size_t i = 0; i < first->va_span; i++) {
@@ -239,6 +261,7 @@ static bool dry_apply(MallocGraph *g, Event *event) {
 
         if (event->type == EV_FREE) {
             g->state->live -= first->va_span;
+            g->used -= first->va_span * MG_PAGE;
             *first = (VirtualPage){};
         }
     } else if (event->type == EV_ALLOC_SMALL || event->type == EV_FREE_SMALL) {
@@ -256,9 +279,11 @@ static bool dry_apply(MallocGraph *g, Event *event) {
                 .owner_depth = g->state->depth, .next = *entry};
             *entry = range;
             g->state->live++;
+            add_used(g, range->bytes);
         } else {
             SmallRange *range = *entry;
             *entry = range->next;
+            g->used -= range->bytes;
             free(range);
             g->state->live--;
         }
@@ -278,6 +303,8 @@ static bool materialize(MallocGraph *g, Event *event) {
         g->allocations = *event->snapshot;
         g->small_ranges = small_ranges;
         g->state->live = 0;
+        g->used = allocation_used(g);
+        g->peak_used = MAX(g->peak_used, g->used);
         return true;
     }
     return materialize(g, event->previous) && dry_apply(g, event);
@@ -370,6 +397,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 
         RETURN_G_FAILED(!event(g, EV_ALLOC_SMALL, offset, size), true);
         g->state->live++;
+        add_used(g, bytes);
         *ptr = g->small_base + offset;
         return true;
     }
@@ -416,6 +444,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     g->allocations.virtual_pages[va].va_span = pages;
     g->allocations.virtual_pages[va].owner_depth = g->state->depth;
     g->state->live += pages;
+    add_used(g, pages * MG_PAGE);
     *ptr = g->base + va * MG_PAGE;
     return true;
 }
@@ -456,6 +485,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
 
         SmallRange *range = *entry;
         *entry = range->next;
+        g->used -= range->bytes;
         free(range);
         g->state->live--;
         return true;
@@ -468,6 +498,7 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         g->allocations.physical_live[g->va_phys[value + j]] = false;
     }
     g->state->live -= first->va_span;
+    g->used -= first->va_span * MG_PAGE;
     *first = (VirtualPage){};
     return true;
 }
@@ -621,8 +652,16 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
         return 0;
     }
 
-    return (which == 1 ? g->va_count + g->small_pages
-                       : g->phys_count + g->small_pages) * MG_PAGE;
+    switch (which) {
+    case 0:
+        return g->peak_used;
+    case 1:
+        return (g->va_count + g->small_pages) * MG_PAGE;
+    case 2:
+        return (g->phys_count + g->small_pages) * MG_PAGE;
+    default:
+        return 0;
+    }
 }
 
 static void free_events(Event **events, size_t count) {
