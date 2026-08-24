@@ -83,6 +83,7 @@ typedef struct {
     CUdeviceptr small_base;
     CUstream stream;
     int device;
+    void *owner_thread;
 
     Event root;
     State *state;
@@ -514,6 +515,7 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream, bool asse
     set_devctx(devctx);
     g->stream = stream;
     g->device = g_devctx->_device_id;
+    g->owner_thread = &active_graph;
     g->assert_breaks = assert_breaks;
 
     if (cuMemAddressReserve(&g->base, MG_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
@@ -685,7 +687,7 @@ static void free_events(Event **events, size_t count) {
 SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     MallocGraph *g = handle;
 
-    if (!g) {
+    if (!g || g->owner_thread != &active_graph) {
         return;
     }
 
