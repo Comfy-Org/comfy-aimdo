@@ -13,13 +13,13 @@ first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 del first
 del second
-graph.pop()
+assert not graph.pop()
 
 graph.push()
 first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 del second
 del first
-graph.pop()
+assert graph.pop()
 
 print("Reordered free branch test passed")

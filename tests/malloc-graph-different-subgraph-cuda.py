@@ -8,13 +8,13 @@ torch.empty(1, device="cuda")
 
 graph = aimdo.record(torch.cuda.current_stream())
 graph.push("first")
-graph.pop()
-graph.pop()
+assert not graph.pop()
+assert not graph.pop()
 
-for name in ("second", "first", "second"):
+for name, broken in (("second", True), ("first", False), ("second", False)):
     graph.push()
     graph.push(name)
-    graph.pop()
-    graph.pop()
+    assert not graph.pop()
+    assert graph.pop() == broken
 
 print("Different subgraph branch test passed")

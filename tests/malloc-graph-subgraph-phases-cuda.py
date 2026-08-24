@@ -12,7 +12,7 @@ graph = aimdo.record(torch.cuda.current_stream())
 graph.push("inner")
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del value
-graph.pop()
+assert not graph.pop()
 
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del value
@@ -20,8 +20,8 @@ del value
 graph.push("inner")
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del value
-graph.pop()
-graph.pop()
+assert not graph.pop()
+assert not graph.pop()
 
 graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
@@ -30,7 +30,7 @@ for _ in range(2):
     graph.push("inner")
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value
-    graph.pop()
-graph.pop()
+    assert not graph.pop()
+assert not graph.pop()
 
 print("Subgraph phases test passed")

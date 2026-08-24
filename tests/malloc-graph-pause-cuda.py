@@ -18,14 +18,14 @@ del temporary
 graph.resume()
 second = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del second, first
-graph.pop()
+assert not graph.pop()
 assert graph.physical_bytes == 16 * M
 
 graph.push()
 first = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 second = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del second, first
-graph.pop()
+assert not graph.pop()
 
 del graph
 gc.collect()
