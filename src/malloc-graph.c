@@ -6,12 +6,14 @@
 #define MG_SMALL_LIMIT (4ULL * M)
 #define MG_SMALL_ALIGN 4096ULL
 #define RETURN_G_FAILED(cond, retval) \
-    if (cond) { \
-        if (g) { \
-            g->failed = true; \
+    do { \
+        if (cond) { \
+            if (g) { \
+                g->failed = true; \
+            } \
+            return retval; \
         } \
-        return retval; \
-    }
+    } while (0)
 
 typedef enum {
     EV_SENTINEL = 0,
