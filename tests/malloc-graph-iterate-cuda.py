@@ -12,7 +12,7 @@ torch.empty(1, device="cuda")
 
 graph = aimdo.record(torch.cuda.current_stream())
 pointer = None
-for iteration in range(3):
+for _ in range(3):
     assert not graph.iterate("block")
     value = torch.empty(1 * M, dtype=torch.uint8, device="cuda")
     if pointer is None:
