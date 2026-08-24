@@ -296,7 +296,7 @@ static bool start_recording(MallocGraph *g) {
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
-    if (!g || g->paused || stream != g->stream) {
+    if (!g || g->failed || g->paused || stream != g->stream) {
         return false;
     }
 
@@ -368,7 +368,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
                               .owner_depth = g->state->depth, .next = *insert_at};
         *insert_at = range;
 
-        event(g, EV_ALLOC_SMALL, offset, size);
+        RETURN_G_FAILED(!event(g, EV_ALLOC_SMALL, offset, size), true);
         g->state->live++;
         *ptr = g->small_base + offset;
         return true;
@@ -412,7 +412,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         g->allocations.physical_live[g->va_phys[va + j]] = true;
     }
 
-    event(g, EV_ALLOC, va, size);
+    RETURN_G_FAILED(!event(g, EV_ALLOC, va, size), true);
     g->allocations.virtual_pages[va].va_span = pages;
     g->allocations.virtual_pages[va].owner_depth = g->state->depth;
     g->state->live += pages;
@@ -423,7 +423,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result) {
     MallocGraph *g = active_graph;
 
-    if (!g || g->paused || stream != g->stream) {
+    if (!g || g->failed || g->paused || stream != g->stream) {
         return false;
     }
 
