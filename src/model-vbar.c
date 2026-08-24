@@ -117,7 +117,8 @@ size_t vbars_free_stream(ssize_t size, CUstream stream) {
 
 #if defined(AIMDO_CUDA)
     CUstreamCaptureStatus capture_status;
-    sync = !CHECK_CU(g_cuda.p_cuStreamIsCapturing(stream, &capture_status)) ||
+    sync = !g_cuda.p_cuStreamIsCapturing ||
+           !CHECK_CU(g_cuda.p_cuStreamIsCapturing(stream, &capture_status)) ||
            capture_status == CU_STREAM_CAPTURE_STATUS_NONE;
 #endif
 
