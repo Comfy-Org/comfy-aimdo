@@ -564,7 +564,7 @@ SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
         scope = NULL;
         if (!(call = calloc(1, sizeof(*call))) ||
             !(scope = calloc(1, sizeof(*scope))) ||
-            !(call_name = strdup(name)) ||
+            !(call_name = malloc(strlen(name) + 1)) ||
             !append_event(g, g->state->cursor, call)) {
             free(call_name);
             free(call);
@@ -573,6 +573,7 @@ SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
             return false;
         }
 
+        strcpy(call_name, name);
         call->type = EV_CALL;
         call->scope = scope;
         call->name = call_name;
