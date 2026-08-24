@@ -15,11 +15,11 @@ graph.push("inner")
 inner = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 inner_pointer = inner.data_ptr()
 del inner
-graph.pop()
+assert not graph.pop()
 tail = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 tail_pointer = tail.data_ptr()
 del tail, outer
-graph.pop()
+assert not graph.pop()
 
 graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
@@ -28,11 +28,11 @@ graph.push("inner")
 inner = torch.empty(16 * M, dtype=torch.uint8, device="cuda")
 assert inner.data_ptr() != outer_pointer
 del inner
-graph.pop()
+assert graph.pop()
 tail = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert tail.data_ptr() == tail_pointer
 del tail, outer
-graph.pop()
+assert not graph.pop()
 
 graph.push()
 outer = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
@@ -40,10 +40,10 @@ graph.push("inner")
 inner = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert inner.data_ptr() == inner_pointer
 del inner
-graph.pop()
+assert not graph.pop()
 tail = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 assert tail.data_ptr() == tail_pointer
 del tail, outer
-graph.pop()
+assert not graph.pop()
 
 print("CUDA malloc graph branch join test passed")

@@ -12,17 +12,17 @@ graph = aimdo.record(torch.cuda.current_stream())
 for _ in range(2):
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value
-graph.pop()
+assert not graph.pop()
 
 graph.push()
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 del value
-graph.pop()
+assert graph.pop()
 
 graph.push()
 for _ in range(2):
     value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
     del value
-graph.pop()
+assert not graph.pop()
 
 print("Missing allocation branch test passed")
