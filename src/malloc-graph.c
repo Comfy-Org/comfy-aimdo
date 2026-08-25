@@ -324,7 +324,21 @@ static bool start_recording(MallocGraph *g) {
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
-    if (!g || g->failed || g->paused || stream != g->stream) {
+    if (!g) {
+        return false;
+    }
+    if (g->failed || g->paused || stream != g->stream) {
+#if defined(AIMDO_CUDA)
+        CUstreamCaptureStatus stream_status = CU_STREAM_CAPTURE_STATUS_NONE;
+        CUstreamCaptureStatus graph_status = CU_STREAM_CAPTURE_STATUS_NONE;
+        CUresult stream_result = g_cuda.p_cuStreamIsCapturing
+            ? g_cuda.p_cuStreamIsCapturing(stream, &stream_status) : (CUresult)-1;
+        CUresult graph_result = g_cuda.p_cuStreamIsCapturing
+            ? g_cuda.p_cuStreamIsCapturing(g->stream, &graph_status) : (CUresult)-1;
+        log(DEBUG, "malloc graph rejected allocation: size=%zuk failed=%d paused=%d stream=%p graph_stream=%p stream_capture=%d/%d graph_capture=%d/%d\n",
+            size / K, g->failed, g->paused, stream, g->stream,
+            (int)stream_result, (int)stream_status, (int)graph_result, (int)graph_status);
+#endif
         return false;
     }
 
