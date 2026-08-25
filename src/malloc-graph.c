@@ -109,6 +109,10 @@ typedef struct {
 
 static _Thread_local MallocGraph *active_graph;
 
+CUstream malloc_graph_stream(void) {
+    return active_graph ? active_graph->stream : NULL;
+}
+
 static void free_small_ranges(SmallRange *range) {
     while (range) {
         SmallRange *next = range->next;
