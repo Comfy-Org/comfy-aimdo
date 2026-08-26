@@ -46,13 +46,14 @@ struct Event {
     Event **next;
     size_t next_count;
     Event *previous;
+    Event *allocation_previous;
     AllocationState *snapshot;
     SmallRange *small_snapshot;
 };
 
 struct State {
     Event *cursor;
-    size_t live;
+    Event *allocations;
     uint32_t depth;
     bool recording;
     bool broken;
@@ -63,12 +64,14 @@ struct State {
 typedef struct {
     int va_span;
     uint32_t owner_depth;
+    Event *allocation;
 } VirtualPage;
 
 struct SmallRange {
     size_t offset;
     size_t bytes;
     uint32_t owner_depth;
+    Event *allocation;
 
     SmallRange *next;
 };
@@ -192,6 +195,24 @@ static Event *event(MallocGraph *g, EventType type, size_t value, size_t bytes) 
     return event;
 }
 
+static void track_allocation(MallocGraph *g, Event *event) {
+    event->allocation_previous = g->state->allocations;
+    g->state->allocations = event;
+}
+
+static bool untrack_allocation(MallocGraph *g, Event *event) {
+    Event **entry = &g->state->allocations;
+    while (*entry && *entry != event) {
+        entry = &(*entry)->allocation_previous;
+    }
+    if (!*entry) {
+        return false;
+    }
+    *entry = event->allocation_previous;
+    event->allocation_previous = NULL;
+    return true;
+}
+
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
     if (recording && !scope->snapshot) {
         RETURN_G_FAILED(!copy_small_ranges(&scope->small_snapshot, g->small_ranges) ||
@@ -256,8 +277,9 @@ static bool dry_apply(MallocGraph *g, Event *event) {
         if (event->type == EV_ALLOC) {
             *first = (VirtualPage){
                 .va_span = ALIGN_UP(event->bytes, MG_PAGE) / MG_PAGE,
-                .owner_depth = g->state->depth};
-            g->state->live += first->va_span;
+                .owner_depth = g->state->depth,
+                .allocation = event};
+            track_allocation(g, event);
             add_used(g, first->va_span * MG_PAGE);
         }
 
@@ -266,7 +288,7 @@ static bool dry_apply(MallocGraph *g, Event *event) {
         }
 
         if (event->type == EV_FREE) {
-            g->state->live -= first->va_span;
+            RETURN_G_FAILED(!untrack_allocation(g, first->allocation), false);
             g->used -= first->va_span * MG_PAGE;
             *first = (VirtualPage){};
         }
@@ -282,16 +304,16 @@ static bool dry_apply(MallocGraph *g, Event *event) {
             RETURN_G_FAILED(!range, false);
             *range = (SmallRange){
                 .offset = value, .bytes = ALIGN_UP(event->bytes, MG_SMALL_ALIGN),
-                .owner_depth = g->state->depth, .next = *entry};
+                .owner_depth = g->state->depth, .allocation = event, .next = *entry};
             *entry = range;
-            g->state->live++;
+            track_allocation(g, event);
             add_used(g, range->bytes);
         } else {
             SmallRange *range = *entry;
+            RETURN_G_FAILED(!untrack_allocation(g, range->allocation), false);
             *entry = range->next;
             g->used -= range->bytes;
             free(range);
-            g->state->live--;
         }
     }
     return true;
@@ -308,7 +330,7 @@ static bool materialize(MallocGraph *g, Event *event) {
         free_small_ranges(g->small_ranges);
         g->allocations = *event->snapshot;
         g->small_ranges = small_ranges;
-        g->state->live = 0;
+        g->state->allocations = NULL;
         g->used = allocation_used(g);
         g->peak_used = MAX(g->peak_used, g->used);
         return true;
@@ -401,8 +423,10 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
                               .owner_depth = g->state->depth, .next = *insert_at};
         *insert_at = range;
 
-        RETURN_G_FAILED(!event(g, EV_ALLOC_SMALL, offset, size), true);
-        g->state->live++;
+        Event *allocation = event(g, EV_ALLOC_SMALL, offset, size);
+        RETURN_G_FAILED(!allocation, true);
+        range->allocation = allocation;
+        track_allocation(g, allocation);
         add_used(g, bytes);
         *ptr = g->small_base + offset;
         return true;
@@ -446,10 +470,11 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         g->allocations.physical_live[g->va_phys[va + j]] = true;
     }
 
-    RETURN_G_FAILED(!event(g, EV_ALLOC, va, size), true);
-    g->allocations.virtual_pages[va].va_span = pages;
-    g->allocations.virtual_pages[va].owner_depth = g->state->depth;
-    g->state->live += pages;
+    Event *allocation = event(g, EV_ALLOC, va, size);
+    RETURN_G_FAILED(!allocation, true);
+    g->allocations.virtual_pages[va] = (VirtualPage){
+        .va_span = pages, .owner_depth = g->state->depth, .allocation = allocation};
+    track_allocation(g, allocation);
     add_used(g, pages * MG_PAGE);
     *ptr = g->base + va * MG_PAGE;
     return true;
@@ -487,23 +512,24 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
             entry = &(*entry)->next;
         }
         RETURN_G_FAILED(!*entry || (*entry)->owner_depth != g->state->depth ||
-                        !event(g, EV_FREE_SMALL, value, 0), true);
+                        !event(g, EV_FREE_SMALL, value, 0) ||
+                        !untrack_allocation(g, (*entry)->allocation), true);
 
         SmallRange *range = *entry;
         *entry = range->next;
         g->used -= range->bytes;
         free(range);
-        g->state->live--;
         return true;
     }
 
     VirtualPage *first = &g->allocations.virtual_pages[value];
-    RETURN_G_FAILED(first->owner_depth != g->state->depth || !first->va_span || !event(g, EV_FREE, value, 0), true);
+    RETURN_G_FAILED(first->owner_depth != g->state->depth || !first->va_span ||
+                    !event(g, EV_FREE, value, 0) ||
+                    !untrack_allocation(g, first->allocation), true);
 
     for (size_t j = 0; j < first->va_span; j++) {
         g->allocations.physical_live[g->va_phys[value + j]] = false;
     }
-    g->state->live -= first->va_span;
     g->used -= first->va_span * MG_PAGE;
     *first = (VirtualPage){};
     return true;
@@ -640,7 +666,7 @@ SHARED_EXPORT int malloc_graph_pop(void *handle) {
             return false;
         }
     }
-    RETURN_G_FAILED(g->state->live, false);
+    RETURN_G_FAILED(g->state->allocations, false);
     RETURN_G_FAILED(g->state->recording && !event(g, EV_END, 0, 0), false);
 
     State *state = g->state;
