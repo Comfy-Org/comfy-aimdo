@@ -223,7 +223,6 @@ fail:
 
 /* model_vbar.c */
 size_t vbars_free(ssize_t size);
-size_t vbars_free_stream(ssize_t size, CUstream stream);
 SHARED_EXPORT
 uint64_t vbars_analyze(void *devctx, bool only_dirty);
 
@@ -240,6 +239,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
 
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream);
 bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result);
+bool malloc_graph_sync_paused(void);
 
 bool allocations_init(void);
 void allocations_cleanup(void);

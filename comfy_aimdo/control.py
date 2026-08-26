@@ -116,7 +116,7 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.malloc_graph_push.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.malloc_graph_push.restype = ctypes.c_bool
 
-    lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+    lib.malloc_graph_pause.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_bool]
     lib.malloc_graph_pause.restype = ctypes.c_bool
 
     lib.malloc_graph_set_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p]

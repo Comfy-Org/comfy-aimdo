@@ -104,10 +104,15 @@ typedef struct {
     bool failed;
     bool complete;
     bool paused;
+    bool sync_paused;
     bool assert_breaks;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
+
+bool malloc_graph_sync_paused(void) {
+    return active_graph && active_graph->sync_paused;
+}
 
 static void free_small_ranges(SmallRange *range) {
     while (range) {
@@ -207,10 +212,10 @@ static CUresult create_page(MallocGraph *g, CUmemGenericAllocationHandle *handle
         .location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device}};
     CUresult r;
 
-    vbars_free_stream(budget_deficit(MG_PAGE), g->stream);
+    vbars_free(budget_deficit(MG_PAGE));
     r = cuMemCreate(handle, MG_PAGE, &prop, 0);
     if (r == CUDA_ERROR_OUT_OF_MEMORY) {
-        vbars_free_stream(MG_PAGE, g->stream);
+        vbars_free(MG_PAGE);
         r = cuMemCreate(handle, MG_PAGE, &prop, 0);
     }
     if (!r) {
@@ -546,13 +551,16 @@ fail:
     return NULL;
 }
 
-SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused) {
+SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused, bool sync) {
     MallocGraph *g = handle;
 
     if (!g || g != active_graph || g->failed) {
         return false;
     }
     g->paused = paused;
+    if (sync) {
+        g->sync_paused = paused;
+    }
     return true;
 }
 

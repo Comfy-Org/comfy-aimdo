@@ -110,17 +110,10 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     return do_free;
 }
 
-size_t vbars_free_stream(ssize_t size, CUstream stream) {
+size_t vbars_free(ssize_t size) {
     size_t pages_needed;
     bool dirty = false;
-    bool sync = true;
-
-#if defined(AIMDO_CUDA)
-    CUstreamCaptureStatus capture_status;
-    sync = !g_cuda.p_cuStreamIsCapturing ||
-           !CHECK_CU(g_cuda.p_cuStreamIsCapturing(stream, &capture_status)) ||
-           capture_status == CU_STREAM_CAPTURE_STATUS_NONE;
-#endif
+    bool sync = !malloc_graph_sync_paused();
 
     one_time_setup();
     vbars_dirty = true;
@@ -154,10 +147,6 @@ size_t vbars_free_stream(ssize_t size, CUstream stream) {
     }
 
     return pages_needed;
-}
-
-size_t vbars_free(ssize_t size) {
-    return vbars_free_stream(size, NULL);
 }
 
 static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {

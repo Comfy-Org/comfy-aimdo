@@ -48,8 +48,6 @@ typedef CUresult (CUDAAPI *PFN_cuEventCreate)(CUevent *phEvent, unsigned int fla
 typedef CUresult (CUDAAPI *PFN_cuEventDestroy)(CUevent hEvent);
 typedef CUresult (CUDAAPI *PFN_cuEventRecord)(CUevent hEvent, CUstream hStream);
 typedef CUresult (CUDAAPI *PFN_cuEventSynchronize)(CUevent hEvent);
-typedef CUresult (CUDAAPI *PFN_cuStreamIsCapturing)(CUstream hStream,
-                                                    CUstreamCaptureStatus *captureStatus);
 typedef CUresult (CUDAAPI *PFN_cuDeviceGetLuid)(char *luid, unsigned int *deviceNodeMask,
                                                 CUdevice dev);
 
@@ -87,7 +85,6 @@ typedef struct AimdoCudaDispatch {
     PFN_cuEventDestroy p_cuEventDestroy;
     PFN_cuEventRecord p_cuEventRecord;
     PFN_cuEventSynchronize p_cuEventSynchronize;
-    PFN_cuStreamIsCapturing p_cuStreamIsCapturing;
     PFN_cuDeviceGetLuid p_cuDeviceGetLuid;
 } AimdoCudaDispatch;
 

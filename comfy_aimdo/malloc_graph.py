@@ -27,11 +27,11 @@ class MallocGraph:
             self._scopes.pop()
         return broken
 
-    def pause(self):
-        self._call(control.lib.malloc_graph_pause, True)
+    def pause(self, sync=False):
+        self._call(control.lib.malloc_graph_pause, True, sync)
 
-    def resume(self):
-        self._call(control.lib.malloc_graph_pause, False)
+    def resume(self, sync=False):
+        self._call(control.lib.malloc_graph_pause, False, sync)
 
     @contextlib.contextmanager
     def use_stream(self, stream):
