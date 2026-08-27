@@ -156,6 +156,7 @@ fail:
 
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
 #define CUDA_BUDGET_HEADROOM (192 * 1024 * 1024)
+#define NVML_BUDGET_HEADROOM (512 * 1024 * 1024)
 
 bool poll_budget_deficit(const char **prevailing_deficit_method)
 {
@@ -215,7 +216,8 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
     used_nvml = nvml_device && aimdo_nvml_memory_info(nvml_device, &free_vram, &total_vram);
 #endif
     if (used_nvml || CHECK_CU(cuMemGetInfo(&free_vram, &total_vram))) {
-        ssize_t deficit_cuda = (ssize_t)(CUDA_BUDGET_HEADROOM / 2) - (ssize_t)free_vram;
+        ssize_t headroom = used_nvml ? NVML_BUDGET_HEADROOM : CUDA_BUDGET_HEADROOM / 2;
+        ssize_t deficit_cuda = headroom - (ssize_t)free_vram;
 
         log(DEBUG,
             "%s: device memory free=%zu MB total=%zu MB deficit_cuda=%zd MB\n",
