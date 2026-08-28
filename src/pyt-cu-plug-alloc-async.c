@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "malloc-rogue.h"
 
 /* cudaMalloc does not guarantee fragmentation handling as well as cudaMallocAsync,
  * so we reserve a small extra headroom when forcing budget pressure.
@@ -211,6 +212,9 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFree_v2(devPtr);
     }
+    if (free_rogue(devPtr, &status)) {
+        return status;
+    }
 
     status = true_cuMemFree_v2(devPtr);
     if (!CHECK_CU(status)) {
@@ -276,6 +280,9 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     }
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFreeAsync(devPtr, hStream);
+    }
+    if (free_rogue(devPtr, &status)) {
+        return status;
     }
     if (malloc_graph_free(devPtr, allocation_size(devPtr), hStream, &status)) {
         return status;

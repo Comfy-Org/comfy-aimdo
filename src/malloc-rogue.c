@@ -146,30 +146,26 @@ bool free_rogue(CUdeviceptr ptr, int *result) {
     allocations_unlock();
 
     *result = cuCtxSynchronize();
-    for (size_t i = 0; !*result && i < rogue->page_count; i++) {
-        if (rogue->pages[i]) {
-            *result = physical_page_unref(rogue->pages[i]);
-            if (!*result) {
-                rogue->pages[i] = NULL;
-            }
+    for (size_t i = 0; i < rogue->page_count; i++) {
+        CUresult status = physical_page_unref(rogue->pages[i]);
+        if (!*result) {
+            *result = status;
         }
     }
+    CUresult status = virtual_range_unref(rogue->range);
     if (!*result) {
-        *result = virtual_range_unref(rogue->range);
+        *result = status;
     }
 
     allocations_lock();
-    if (!*result) {
-        entry = (Rogue **)&rogues;
-        while (*entry != rogue) {
-            entry = &(*entry)->next;
-        }
-        *entry = rogue->next;
-        free(rogue->pages);
-        free(rogue);
-    } else {
-        rogue->freeing = false;
+    entry = (Rogue **)&rogues;
+    while (*entry != rogue) {
+        entry = &(*entry)->next;
     }
+    *entry = rogue->next;
     allocations_unlock();
+
+    free(rogue->pages);
+    free(rogue);
     return true;
 }
