@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "vmm-ref.h"
 
 #define MG_PAGE (8ULL * M)
 #define MG_PAGES 8192ULL
@@ -82,8 +83,8 @@ struct AllocationState {
 };
 
 typedef struct {
-    CUdeviceptr base;
-    CUdeviceptr small_base;
+    VirtualRange *base;
+    VirtualRange *small_base;
     CUstream stream;
     int device;
     void *owner_thread;
@@ -248,7 +249,7 @@ static CUresult create_page(MallocGraph *g, CUmemGenericAllocationHandle *handle
 static int map_page(MallocGraph *g, size_t va, size_t phys) {
     CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
                               .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
-    CUdeviceptr addr = g->base + va * MG_PAGE;
+    CUdeviceptr addr = virtual_range_get(g->base) + va * MG_PAGE;
     CUresult r;
 
     if (phys == g->phys_count) {
@@ -364,8 +365,8 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         if (match) {
             g->state->cursor = match;
             *ptr = type == EV_ALLOC_SMALL
-                ? g->small_base + match->value
-                : g->base + match->value * MG_PAGE;
+                ? virtual_range_get(g->small_base) + match->value
+                : virtual_range_get(g->base) + match->value * MG_PAGE;
             return true;
         }
         RETURN_G_FAILED(!start_recording(g), true);
@@ -407,7 +408,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
                                       .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
             if (g->small_pages < pages) {
                 CUmemGenericAllocationHandle *handle = &g->small_handles[g->small_pages];
-                CUdeviceptr addr = g->small_base + g->small_pages * MG_PAGE;
+                CUdeviceptr addr = virtual_range_get(g->small_base) + g->small_pages * MG_PAGE;
                 CUresult r = create_page(g, handle);
                 RETURN_G_FAILED(r, true);
                 g->small_pages++;
@@ -428,7 +429,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         range->allocation = allocation;
         track_allocation(g, allocation);
         add_used(g, bytes);
-        *ptr = g->small_base + offset;
+        *ptr = virtual_range_get(g->small_base) + offset;
         return true;
     }
 
@@ -476,7 +477,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         .va_span = pages, .owner_depth = g->state->depth, .allocation = allocation};
     track_allocation(g, allocation);
     add_used(g, pages * MG_PAGE);
-    *ptr = g->base + va * MG_PAGE;
+    *ptr = virtual_range_get(g->base) + va * MG_PAGE;
     return true;
 }
 
@@ -487,13 +488,15 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
         return false;
     }
 
-    bool small = ptr >= g->small_base && ptr < g->small_base + MG_SMALL_PAGES * MG_PAGE;
-    if (!small && (ptr < g->base || ptr >= g->base + MG_PAGES * MG_PAGE)) {
+    CUdeviceptr base = virtual_range_get(g->base);
+    CUdeviceptr small_base = virtual_range_get(g->small_base);
+    bool small = ptr >= small_base && ptr < small_base + MG_SMALL_PAGES * MG_PAGE;
+    if (!small && (ptr < base || ptr >= base + MG_PAGES * MG_PAGE)) {
         RETURN_G_FAILED(size, false);
         return false;
     }
 
-    size_t value = small ? ptr - g->small_base : (ptr - g->base) / MG_PAGE;
+    size_t value = small ? ptr - small_base : (ptr - base) / MG_PAGE;
 
     *result = 0;
     if (!g->state->recording) {
@@ -549,10 +552,10 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream, bool asse
     g->owner_thread = &active_graph;
     g->assert_breaks = assert_breaks;
 
-    if (cuMemAddressReserve(&g->base, MG_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
+    if (!(g->base = virtual_range_alloc(MG_PAGES * MG_PAGE, MG_PAGE))) {
         goto fail;
     }
-    if (cuMemAddressReserve(&g->small_base, MG_SMALL_PAGES * MG_PAGE, MG_PAGE, 0, 0)) {
+    if (!(g->small_base = virtual_range_alloc(MG_SMALL_PAGES * MG_PAGE, MG_PAGE))) {
         goto fail_address;
     }
 
@@ -567,9 +570,9 @@ SHARED_EXPORT void *malloc_graph_create(void *devctx, CUstream stream, bool asse
     return g;
 
 fail_small_address:
-    cuMemAddressFree(g->small_base, MG_SMALL_PAGES * MG_PAGE);
+    virtual_range_unref(g->small_base);
 fail_address:
-    cuMemAddressFree(g->base, MG_PAGES * MG_PAGE);
+    virtual_range_unref(g->base);
 fail:
     free_small_ranges(g->root.small_snapshot);
     free(g->root.snapshot);
@@ -737,7 +740,7 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
 
     for (size_t i = 0; i < g->va_count; i++) {
         if (g->va_phys[i] >= 0) {
-            cuMemUnmap(g->base + i * MG_PAGE, MG_PAGE);
+            cuMemUnmap(virtual_range_get(g->base) + i * MG_PAGE, MG_PAGE);
         }
     }
 
@@ -746,12 +749,12 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     }
 
     for (size_t i = 0; i < g->small_pages; i++) {
-        cuMemUnmap(g->small_base + i * MG_PAGE, MG_PAGE);
+        cuMemUnmap(virtual_range_get(g->small_base) + i * MG_PAGE, MG_PAGE);
         cuMemRelease(g->small_handles[i]);
     }
 
-    cuMemAddressFree(g->base, MG_PAGES * MG_PAGE);
-    cuMemAddressFree(g->small_base, MG_SMALL_PAGES * MG_PAGE);
+    virtual_range_unref(g->base);
+    virtual_range_unref(g->small_base);
     total_vram_usage -= (g->phys_count + g->small_pages) * MG_PAGE;
 
     free_small_ranges(g->root.small_snapshot);
