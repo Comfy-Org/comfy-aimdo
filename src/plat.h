@@ -243,6 +243,8 @@ bool malloc_graph_sync_paused(void);
 
 bool allocations_init(void);
 void allocations_cleanup(void);
+void allocations_lock(void);
+void allocations_unlock(void);
 void allocations_analyze(bool only_dirty);
 SHARED_EXPORT
 void aimdo_analyze(void *devctx);
