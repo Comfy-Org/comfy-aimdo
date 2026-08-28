@@ -14,25 +14,21 @@ torch.empty(1, device="cuda")
 graph = aimdo.record(torch.cuda.current_stream())
 value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 pointer = value.data_ptr()
-value.fill_(17)
 graph.pop()
 
-graph.push()
-replacement = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
-assert replacement.data_ptr() != pointer
-replacement.fill_(23)
-del replacement
-graph.pop()
-assert value[0].item() == 17
-
-del graph
-gc.collect()
-assert value[-1].item() == 17
-
+value.fill_(37)
 holder = [value]
 del value
 thread = threading.Thread(target=lambda: holder.pop())
 thread.start()
 thread.join()
+
+graph.push()
+value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
+assert value.data_ptr() == pointer
+del value
+graph.pop()
+
+del graph
 gc.collect()
 aimdo.deinit()

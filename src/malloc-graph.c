@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "malloc-rogue.h"
 #include "vmm-ref.h"
 
 #define MG_PAGE (8ULL * M)
@@ -48,6 +49,7 @@ struct Event {
     size_t next_count;
     Event *previous;
     Event *allocation_previous;
+    bool rogue_owned;
     AllocationState *snapshot;
     SmallRange *small_snapshot;
 };
@@ -71,6 +73,7 @@ typedef struct {
 struct SmallRange {
     size_t offset;
     size_t bytes;
+    CUdeviceptr rogue_ptr;
     uint32_t owner_depth;
     Event *allocation;
 
@@ -91,9 +94,12 @@ typedef struct {
 
     Event root;
     State *state;
+    Event *rogue_candidates;
 
     AllocationState allocations;
     SmallRange *small_ranges;
+    SmallRange *small_unusable;
+    CUdeviceptr black_holes[MG_PAGES];
     int va_phys[MG_PAGES];
     PhysicalPage *physical_pages[MG_PAGES];
     PhysicalPage *mapped_pages[MG_PAGES];
@@ -112,9 +118,33 @@ typedef struct {
     bool paused;
     bool sync_paused;
     bool assert_breaks;
+    bool handoff_attempted;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
+
+static bool rogue_va(MallocGraph *g, size_t va);
+static bool rogue_phys(MallocGraph *g, size_t phys);
+static bool small_unavailable(MallocGraph *g, size_t offset, size_t bytes);
+static CUresult map_reference(MallocGraph *g, CUdeviceptr address,
+                              PhysicalPage *page, PhysicalPage **mapping);
+
+static CUdeviceptr candidate_ptr(MallocGraph *g, Event *candidate) {
+    VirtualRange *range = candidate->type == EV_ALLOC_SMALL ? g->small_base : g->base;
+    return virtual_range_get(range) + candidate->value *
+           (candidate->type == EV_ALLOC_SMALL ? 1 : MG_PAGE);
+}
+
+static bool graph_failed(MallocGraph *g) {
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (rogue_candidate_freed(candidate_ptr(g, candidate))) {
+            g->failed = true;
+            break;
+        }
+    }
+    return g->failed;
+}
 
 bool malloc_graph_sync_paused(void) {
     return active_graph && active_graph->sync_paused;
@@ -179,6 +209,23 @@ static Event *find_event(MallocGraph *g, EventType type, size_t value, size_t by
             ((type == EV_FREE || type == EV_FREE_SMALL) && event->value != value)) {
             continue;
         }
+        if (type == EV_ALLOC) {
+            size_t pages = ALIGN_UP(event->bytes, MG_PAGE) / MG_PAGE;
+            size_t i;
+            for (i = 0; i < pages; i++) {
+                size_t va = event->value + i;
+                if (rogue_va(g, va) || rogue_phys(g, g->va_phys[va])) {
+                    break;
+                }
+            }
+            if (i < pages) {
+                continue;
+            }
+        } else if (type == EV_ALLOC_SMALL &&
+                   small_unavailable(g, event->value,
+                                     ALIGN_UP(event->bytes, MG_SMALL_ALIGN))) {
+            continue;
+        }
         return event;
     }
     return NULL;
@@ -214,6 +261,145 @@ static bool untrack_allocation(MallocGraph *g, Event *event) {
     *entry = event->allocation_previous;
     event->allocation_previous = NULL;
     return true;
+}
+
+static bool sever_event(MallocGraph *g, Event *event) {
+    Event *parent = event->previous;
+    size_t count = parent->next_count + event->next_count - 1;
+    Event **next = count ? malloc(count * sizeof(*next)) : NULL;
+    RETURN_G_FAILED(count && !next, false);
+
+    size_t j = 0;
+    for (size_t i = 0; i < parent->next_count; i++) {
+        if (parent->next[i] == event) {
+            for (size_t k = 0; k < event->next_count; k++) {
+                next[j++] = event->next[k];
+                event->next[k]->previous = parent;
+            }
+        } else {
+            next[j++] = parent->next[i];
+        }
+    }
+
+    if (g->state->cursor == event) {
+        g->state->cursor = parent;
+    }
+    free(parent->next);
+    free(event->next);
+    parent->next = next;
+    parent->next_count = count;
+    event->next = NULL;
+    event->next_count = 0;
+    event->previous = NULL;
+    return true;
+}
+
+static bool collect_rogue_candidates(MallocGraph *g) {
+    Event *allocation = g->state->allocations;
+
+    while (allocation) {
+        Event *previous = allocation->allocation_previous;
+        if (!register_rogue_candidate(candidate_ptr(g, allocation))) {
+            g->failed = true;
+            return false;
+        }
+        if (!sever_event(g, allocation)) {
+            unregister_rogue_candidate(candidate_ptr(g, allocation));
+            return false;
+        }
+        allocation->allocation_previous = g->rogue_candidates;
+        g->rogue_candidates = allocation;
+        allocation = previous;
+    }
+    g->state->allocations = NULL;
+    return true;
+}
+
+static bool is_rogue_candidate(MallocGraph *g, Event *event) {
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (candidate == event) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool rogue_va(MallocGraph *g, size_t va) {
+    CUdeviceptr ptr = g->black_holes[va];
+    if (ptr && !rogue_exists(ptr)) {
+        if (map_reference(g, virtual_range_get(g->base) + va * MG_PAGE,
+                          g->physical_pages[g->va_phys[va]], &g->mapped_pages[va])) {
+            g->failed = true;
+            return true;
+        }
+        g->black_holes[va] = 0;
+    } else if (ptr) {
+        return true;
+    }
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (candidate->type == EV_ALLOC) {
+            size_t pages = ALIGN_UP(candidate->bytes, MG_PAGE) / MG_PAGE;
+            if (va >= candidate->value && va < candidate->value + pages) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool rogue_phys(MallocGraph *g, size_t phys) {
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (candidate->type == EV_ALLOC) {
+            size_t pages = ALIGN_UP(candidate->bytes, MG_PAGE) / MG_PAGE;
+            for (size_t i = 0; i < pages; i++) {
+                if (g->va_phys[candidate->value + i] == (int)phys) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static void prune_small_unusable(MallocGraph *g) {
+    SmallRange **entry = &g->small_unusable;
+    while (*entry) {
+        SmallRange *range = *entry;
+        if (!rogue_exists(range->rogue_ptr)) {
+            *entry = range->next;
+            free(range);
+            continue;
+        }
+        entry = &range->next;
+    }
+}
+
+static bool small_unavailable(MallocGraph *g, size_t offset, size_t bytes) {
+    size_t end = offset + bytes;
+
+    prune_small_unusable(g);
+    for (SmallRange *range = g->small_unusable; range; range = range->next) {
+        if (offset < range->offset + range->bytes && range->offset < end) {
+            return true;
+        }
+    }
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (rogue_candidate_freed(candidate_ptr(g, candidate))) {
+            continue;
+        }
+        if (candidate->type == EV_ALLOC_SMALL) {
+            size_t first = candidate->value / MG_PAGE * MG_PAGE;
+            size_t candidate_end = ALIGN_UP(candidate->value + candidate->bytes, MG_PAGE);
+            if (offset < candidate_end && first < end) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
@@ -355,6 +541,221 @@ static bool materialize(MallocGraph *g, Event *event) {
     return materialize(g, event->previous) && dry_apply(g, event);
 }
 
+static void scrub_rogue_candidates(MallocGraph *g, AllocationState *allocations,
+                                   SmallRange **small_ranges) {
+    if (allocations) {
+        for (size_t va = 0; va < g->va_count; va++) {
+            VirtualPage *first = &allocations->virtual_pages[va];
+            if (!first->allocation || !is_rogue_candidate(g, first->allocation)) {
+                continue;
+            }
+            for (size_t i = 0; i < first->va_span; i++) {
+                allocations->physical_live[g->va_phys[va + i]] = false;
+            }
+            *first = (VirtualPage){};
+        }
+    }
+
+    if (small_ranges) {
+        SmallRange **entry = small_ranges;
+        while (*entry) {
+            SmallRange *range = *entry;
+            if (range->allocation && is_rogue_candidate(g, range->allocation)) {
+                *entry = range->next;
+                free(range);
+            } else {
+                entry = &range->next;
+            }
+        }
+    }
+}
+
+static void scrub_rogue_snapshots(MallocGraph *g, Event *event) {
+    scrub_rogue_candidates(g, event->snapshot, &event->small_snapshot);
+    for (size_t i = 0; i < event->next_count; i++) {
+        Event *next = event->next[i];
+        if (next->type == EV_CALL) {
+            scrub_rogue_snapshots(g, next->scope);
+        }
+        scrub_rogue_snapshots(g, next);
+    }
+}
+
+static bool handoff_rogues(MallocGraph *g) {
+    g->handoff_attempted = true;
+    if (cuCtxSynchronize()) {
+        g->failed = true;
+        return false;
+    }
+
+    PhysicalPage **pages = NULL;
+    bool freed = false;
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (!pages && !(pages = malloc(MG_PAGES * sizeof(*pages)))) {
+            g->failed = true;
+            return false;
+        }
+
+        VirtualRange *range;
+        CUdeviceptr ptr;
+        size_t count;
+
+        if (candidate->type == EV_ALLOC_SMALL) {
+            range = g->small_base;
+            ptr = virtual_range_get(range) + candidate->value;
+            size_t first = candidate->value / MG_PAGE;
+            size_t last = (candidate->value + ALIGN_UP(candidate->bytes, MG_SMALL_ALIGN) - 1) / MG_PAGE;
+            count = last - first + 1;
+            for (size_t i = 0; i < count; i++) {
+                pages[i] = g->small_physical_pages[first + i];
+            }
+        } else {
+            range = g->base;
+            ptr = virtual_range_get(range) + candidate->value * MG_PAGE;
+            count = ALIGN_UP(candidate->bytes, MG_PAGE) / MG_PAGE;
+            for (size_t i = 0; i < count; i++) {
+                pages[i] = g->physical_pages[g->va_phys[candidate->value + i]];
+            }
+        }
+
+        RogueHandoff handoff = handoff_rogue(range, ptr, pages, count);
+        if (!handoff) {
+            free(pages);
+            g->failed = true;
+            return false;
+        }
+        if (handoff == ROGUE_HANDOFF_FREED) {
+            freed = true;
+        } else {
+            candidate->rogue_owned = true;
+        }
+        if (candidate->rogue_owned && candidate->type == EV_ALLOC) {
+            for (size_t i = 0; i < count; i++) {
+                g->black_holes[candidate->value + i] = ptr;
+            }
+        }
+    }
+    free(pages);
+
+    if (freed && cuCtxSynchronize()) {
+        g->failed = true;
+        return false;
+    }
+    return true;
+}
+
+static void free_rogue_candidates(MallocGraph *g) {
+    while (g->rogue_candidates) {
+        Event *candidate = g->rogue_candidates;
+        g->rogue_candidates = candidate->allocation_previous;
+        unregister_rogue_candidate(candidate_ptr(g, candidate));
+        free(candidate);
+    }
+}
+
+static bool finalize_rogues(MallocGraph *g) {
+    if (!g->rogue_candidates) {
+        return true;
+    }
+    if (!handoff_rogues(g)) {
+        return false;
+    }
+
+    PhysicalPage **replacements = calloc(g->phys_count, sizeof(*replacements));
+    SmallRange *unusable = NULL;
+    if (g->phys_count && !replacements) {
+        goto fail;
+    }
+
+    for (Event *candidate = g->rogue_candidates; candidate;
+         candidate = candidate->allocation_previous) {
+        if (!candidate->rogue_owned) {
+            continue;
+        }
+        if (candidate->type == EV_ALLOC_SMALL) {
+            SmallRange *range = malloc(sizeof(*range));
+            if (!range) {
+                goto fail;
+            }
+            *range = (SmallRange){
+                .offset = candidate->value / MG_PAGE * MG_PAGE,
+                .bytes = ALIGN_UP(candidate->value + candidate->bytes, MG_PAGE) -
+                         candidate->value / MG_PAGE * MG_PAGE,
+                .rogue_ptr = virtual_range_get(g->small_base) + candidate->value,
+                .next = unusable};
+            unusable = range;
+            continue;
+        }
+
+        size_t count = ALIGN_UP(candidate->bytes, MG_PAGE) / MG_PAGE;
+        for (size_t i = 0; i < count; i++) {
+            size_t phys = g->va_phys[candidate->value + i];
+            if (!replacements[phys] && create_page(g, &replacements[phys])) {
+                goto fail;
+            }
+        }
+    }
+
+    bool remap_failed = false;
+    for (size_t va = 0; va < g->va_count; va++) {
+        int phys = g->va_phys[va];
+        if (phys < 0 || !replacements[phys]) {
+            continue;
+        }
+
+        if (physical_page_unref(g->mapped_pages[va])) {
+            remap_failed = true;
+            continue;
+        }
+        g->mapped_pages[va] = NULL;
+        if (!g->black_holes[va] &&
+            map_reference(g, virtual_range_get(g->base) + va * MG_PAGE,
+                          replacements[phys], &g->mapped_pages[va])) {
+            remap_failed = true;
+        }
+    }
+    for (size_t phys = 0; phys < g->phys_count; phys++) {
+        if (replacements[phys]) {
+            PhysicalPage *page = g->physical_pages[phys];
+            g->physical_pages[phys] = replacements[phys];
+            physical_page_unref(page);
+        }
+    }
+    free(replacements);
+    if (remap_failed) {
+        free_small_ranges(unusable);
+        g->failed = true;
+        return false;
+    }
+
+    while (unusable) {
+        SmallRange *next = unusable->next;
+        unusable->next = g->small_unusable;
+        g->small_unusable = unusable;
+        unusable = next;
+    }
+    scrub_rogue_candidates(g, &g->allocations, &g->small_ranges);
+    scrub_rogue_snapshots(g, &g->root);
+    g->used = allocation_used(g);
+
+    free_rogue_candidates(g);
+    return true;
+
+fail:
+    if (replacements) {
+        for (size_t phys = 0; phys < g->phys_count; phys++) {
+            if (replacements[phys]) {
+                physical_page_unref(replacements[phys]);
+            }
+        }
+    }
+    free(replacements);
+    free_small_ranges(unusable);
+    g->failed = true;
+    return false;
+}
+
 static bool start_recording(MallocGraph *g) {
     RETURN_G_FAILED(g->assert_breaks, false);
     if (!materialize(g, g->state->cursor)) {
@@ -365,10 +766,74 @@ static bool start_recording(MallocGraph *g) {
     return true;
 }
 
+static void consider_small_interval(size_t position, size_t offset, size_t bytes,
+                                    size_t *next_offset, size_t *next_end) {
+    size_t end = offset + bytes;
+    if (end <= position) {
+        return;
+    }
+    if (offset <= position) {
+        *next_offset = position;
+        *next_end = MAX(*next_end, end);
+    } else if (offset < *next_offset) {
+        *next_offset = offset;
+        *next_end = end;
+    } else if (offset == *next_offset) {
+        *next_end = MAX(*next_end, end);
+    }
+}
+
+static size_t small_allocation_offset(MallocGraph *g, size_t bytes) {
+    size_t position = 0;
+    size_t offset = g->small_size;
+    size_t smallest_hole = SIZE_MAX;
+
+    prune_small_unusable(g);
+    while (position < g->small_size) {
+        size_t next_offset = SIZE_MAX;
+        size_t next_end = 0;
+
+        for (SmallRange *range = g->small_ranges; range; range = range->next) {
+            consider_small_interval(position, range->offset, range->bytes,
+                                    &next_offset, &next_end);
+        }
+        for (SmallRange *range = g->small_unusable; range; range = range->next) {
+            consider_small_interval(position, range->offset, range->bytes,
+                                    &next_offset, &next_end);
+        }
+        for (Event *candidate = g->rogue_candidates; candidate;
+             candidate = candidate->allocation_previous) {
+            if (candidate->type == EV_ALLOC_SMALL) {
+                size_t first = candidate->value / MG_PAGE * MG_PAGE;
+                consider_small_interval(position, first,
+                                        ALIGN_UP(candidate->value + candidate->bytes, MG_PAGE) - first,
+                                        &next_offset, &next_end);
+            }
+        }
+
+        if (next_offset == SIZE_MAX) {
+            next_offset = g->small_size;
+        }
+        size_t hole = next_offset - position;
+        if (hole >= bytes && hole < smallest_hole) {
+            offset = position;
+            smallest_hole = hole;
+        }
+        if (next_offset == g->small_size) {
+            break;
+        }
+        position = next_end;
+    }
+    if (smallest_hole == SIZE_MAX) {
+        offset = MAX(offset, position);
+    }
+    return offset;
+}
+
 bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     MallocGraph *g = active_graph;
 
-    if (!g || g->failed || g->paused || stream != g->stream) {
+    if (!g || graph_failed(g) || g->paused || stream != g->stream) {
         return false;
     }
 
@@ -385,34 +850,16 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
                 : virtual_range_get(g->base) + match->value * MG_PAGE;
             return true;
         }
+        RETURN_G_FAILED(g->failed, true);
         RETURN_G_FAILED(!start_recording(g), true);
     }
 
     if (size < MG_SMALL_LIMIT) {
         size_t bytes = ALIGN_UP(size, MG_SMALL_ALIGN);
-        size_t offset = g->small_size;
-        size_t smallest_hole = SIZE_MAX;
-        size_t previous_end = 0;
-        SmallRange **insert_at = NULL;
-        SmallRange **previous_next = &g->small_ranges;
-
-        for (SmallRange *range = g->small_ranges; range; range = range->next) {
-            size_t hole = range->offset - previous_end;
-            if (hole >= bytes && hole < smallest_hole) {
-                offset = previous_end;
-                smallest_hole = hole;
-                insert_at = previous_next;
-            }
-            previous_end = range->offset + range->bytes;
-            previous_next = &range->next;
-        }
-        size_t hole = g->small_size - previous_end;
-        if (hole >= bytes && hole < smallest_hole) {
-            offset = previous_end;
-            insert_at = previous_next;
-        }
-        if (!insert_at) {
-            insert_at = previous_next;
+        size_t offset = small_allocation_offset(g, bytes);
+        SmallRange **insert_at = &g->small_ranges;
+        while (*insert_at && (*insert_at)->offset < offset) {
+            insert_at = &(*insert_at)->next;
         }
 
         size_t end = offset + bytes;
@@ -453,7 +900,8 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         size_t j;
         for (j = 0; j < pages; j++) {
             int phys = g->va_phys[va + j];
-            if (g->allocations.physical_live[phys]) {
+            if (rogue_va(g, va + j) || g->allocations.physical_live[phys] ||
+                rogue_phys(g, phys)) {
                 break;
             }
             g->allocations.physical_live[phys] = true;
@@ -466,6 +914,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
         }
         va += j + 1;
     }
+    RETURN_G_FAILED(g->failed, true);
     if (va + pages > g->va_count) {
         va = g->va_count;
 
@@ -477,7 +926,8 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     for (size_t j = 0; j < pages; j++) {
         if (g->va_phys[va + j] < 0) {
             size_t p = 0;
-            while (p < g->phys_count && g->allocations.physical_live[p]) {
+            while (p < g->phys_count &&
+                   (g->allocations.physical_live[p] || rogue_phys(g, p))) {
                 p++;
             }
             RETURN_G_FAILED(map_page(g, va + j, p), true);
@@ -498,7 +948,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
 bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result) {
     MallocGraph *g = active_graph;
 
-    if (!g || g->failed || g->paused || stream != g->stream) {
+    if (!g || graph_failed(g) || g->paused || stream != g->stream) {
         return false;
     }
 
@@ -597,7 +1047,7 @@ fail:
 SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused, bool sync) {
     MallocGraph *g = handle;
 
-    if (!g || g != active_graph || g->failed) {
+    if (!g || g != active_graph || graph_failed(g)) {
         return false;
     }
     g->paused = paused;
@@ -610,7 +1060,7 @@ SHARED_EXPORT bool malloc_graph_pause(void *handle, bool paused, bool sync) {
 SHARED_EXPORT bool malloc_graph_set_stream(void *handle, CUstream stream) {
     MallocGraph *g = handle;
 
-    if (!g || g != active_graph || g->failed) {
+    if (!g || g != active_graph || graph_failed(g)) {
         return false;
     }
     g->stream = stream;
@@ -620,7 +1070,7 @@ SHARED_EXPORT bool malloc_graph_set_stream(void *handle, CUstream stream) {
 SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
     MallocGraph *g = handle;
 
-    if (!g || g->failed) {
+    if (!g || graph_failed(g)) {
         return false;
     }
     if (!name) {
@@ -671,7 +1121,7 @@ SHARED_EXPORT bool malloc_graph_push(void *handle, const char *name) {
 SHARED_EXPORT int malloc_graph_pop(void *handle) {
     MallocGraph *g = handle;
 
-    if (!g || g != active_graph || g->failed) {
+    if (!g || g != active_graph || graph_failed(g)) {
         return false;
     }
 
@@ -683,8 +1133,12 @@ SHARED_EXPORT int malloc_graph_pop(void *handle) {
             return false;
         }
     }
-    RETURN_G_FAILED(g->state->allocations, false);
+    RETURN_G_FAILED(!collect_rogue_candidates(g), false);
     RETURN_G_FAILED(g->state->recording && !event(g, EV_END, 0, 0), false);
+
+    if (!g->state->next && !finalize_rogues(g)) {
+        return false;
+    }
 
     State *state = g->state;
     g->state = state->next;
@@ -746,6 +1200,13 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
         active_graph = NULL;
     }
 
+    if (g->rogue_candidates) {
+        if (!g->handoff_attempted) {
+            handoff_rogues(g);
+        }
+        free_rogue_candidates(g);
+    }
+
     while (g->state) {
         State *state = g->state;
         g->state = state->next;
@@ -771,6 +1232,7 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     virtual_range_unref(g->small_base);
     free_small_ranges(g->root.small_snapshot);
     free_small_ranges(g->small_ranges);
+    free_small_ranges(g->small_unusable);
     free(g->root.snapshot);
     free_events(g->root.next, g->root.next_count);
     free(g);

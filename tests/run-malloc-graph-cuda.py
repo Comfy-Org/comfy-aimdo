@@ -42,7 +42,12 @@ TESTS = (
     "malloc-graph-leak-cuda.py",
     "malloc-graph-free-external-subgraph-cuda.py",
     "malloc-graph-free-outer-subgraph-cuda.py",
+    "malloc-graph-free-rogue-outer-cuda.py",
     "malloc-graph-leak-subgraph-cuda.py",
+    "malloc-graph-rogue-event-splice-cuda.py",
+    "malloc-graph-rogue-alias-cuda.py",
+    "malloc-graph-rogue-reuse-cuda.py",
+    "malloc-graph-small-rogue-cuda.py",
 )
 
 directory = Path(__file__).parent

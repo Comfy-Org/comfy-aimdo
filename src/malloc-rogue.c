@@ -18,6 +18,18 @@ typedef struct RogueCandidate {
     struct RogueCandidate *next;
 } RogueCandidate;
 
+static void unregister_candidate(CUdeviceptr ptr) {
+    RogueCandidate **entry = (RogueCandidate **)&global_rogue_candidates;
+    while (*entry && (*entry)->ptr != ptr) {
+        entry = &(*entry)->next;
+    }
+    if (*entry) {
+        RogueCandidate *candidate = *entry;
+        *entry = candidate->next;
+        free(candidate);
+    }
+}
+
 bool register_rogue_candidate(CUdeviceptr ptr) {
     RogueCandidate *candidate = malloc(sizeof(*candidate));
     if (!candidate) {
@@ -30,6 +42,12 @@ bool register_rogue_candidate(CUdeviceptr ptr) {
     global_rogue_candidates = candidate;
     allocations_unlock();
     return true;
+}
+
+void unregister_rogue_candidate(CUdeviceptr ptr) {
+    allocations_lock();
+    unregister_candidate(ptr);
+    allocations_unlock();
 }
 
 bool rogue_candidate_freed(CUdeviceptr ptr) {

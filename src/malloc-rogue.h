@@ -11,6 +11,7 @@ typedef enum {
 } RogueHandoff;
 
 bool register_rogue_candidate(CUdeviceptr ptr);
+void unregister_rogue_candidate(CUdeviceptr ptr);
 bool rogue_candidate_freed(CUdeviceptr ptr);
 RogueHandoff handoff_rogue(VirtualRange *range, CUdeviceptr ptr,
                            PhysicalPage **pages, size_t page_count);
