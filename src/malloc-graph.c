@@ -95,8 +95,10 @@ typedef struct {
     AllocationState allocations;
     SmallRange *small_ranges;
     int va_phys[MG_PAGES];
-    CUmemGenericAllocationHandle physical_handles[MG_PAGES];
-    CUmemGenericAllocationHandle small_handles[MG_SMALL_PAGES];
+    PhysicalPage *physical_pages[MG_PAGES];
+    PhysicalPage *mapped_pages[MG_PAGES];
+    PhysicalPage *small_physical_pages[MG_SMALL_PAGES];
+    PhysicalPage *small_mapped_pages[MG_SMALL_PAGES];
 
     size_t va_count;
     size_t phys_count;
@@ -229,39 +231,53 @@ static bool push_stack(MallocGraph *g, Event *scope, bool recording) {
     return true;
 }
 
-static CUresult create_page(MallocGraph *g, CUmemGenericAllocationHandle *handle) {
-    CUmemAllocationProp prop = {.type = CU_MEM_ALLOCATION_TYPE_PINNED,
-        .location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device}};
+static CUresult create_page(MallocGraph *g, PhysicalPage **page) {
     CUresult r;
 
     vbars_free(budget_deficit(MG_PAGE));
-    r = cuMemCreate(handle, MG_PAGE, &prop, 0);
+    r = physical_page_alloc(page, MG_PAGE, g->device);
     if (r == CUDA_ERROR_OUT_OF_MEMORY) {
         vbars_free(MG_PAGE);
-        r = cuMemCreate(handle, MG_PAGE, &prop, 0);
-    }
-    if (!r) {
-        total_vram_usage += MG_PAGE;
+        r = physical_page_alloc(page, MG_PAGE, g->device);
     }
     return r;
 }
 
-static int map_page(MallocGraph *g, size_t va, size_t phys) {
+static CUresult map_reference(MallocGraph *g, CUdeviceptr address,
+                              PhysicalPage *page, PhysicalPage **mapping) {
     CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
                               .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
+    PhysicalPage *reference = physical_page_ref(page, 0);
+    if (!reference) {
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
+
+    CUresult result = cuMemMap(address, MG_PAGE, 0, physical_page_get(page), 0);
+    if (!result) {
+        reference->address = address;
+        result = cuMemSetAccess(address, MG_PAGE, &access, 1);
+    }
+    if (result) {
+        physical_page_unref(reference);
+    } else {
+        *mapping = reference;
+    }
+    return result;
+}
+
+static int map_page(MallocGraph *g, size_t va, size_t phys) {
     CUdeviceptr addr = virtual_range_get(g->base) + va * MG_PAGE;
     CUresult r;
 
     if (phys == g->phys_count) {
-        r = create_page(g, &g->physical_handles[phys]);
+        r = create_page(g, &g->physical_pages[phys]);
         if (r) {
             return r;
         }
         g->phys_count++;
     }
 
-    if ((r = cuMemMap(addr, MG_PAGE, 0, g->physical_handles[phys], 0)) ||
-        (r = cuMemSetAccess(addr, MG_PAGE, &access, 1))) {
+    if ((r = map_reference(g, addr, g->physical_pages[phys], &g->mapped_pages[va]))) {
         return r;
     }
     g->va_phys[va] = (int)phys;
@@ -404,16 +420,14 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
             size_t pages = ALIGN_UP(end, MG_PAGE) / MG_PAGE;
             RETURN_G_FAILED(pages > MG_SMALL_PAGES, true);
 
-            CUmemAccessDesc access = {.location = {CU_MEM_LOCATION_TYPE_DEVICE, g->device},
-                                      .flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE};
             if (g->small_pages < pages) {
-                CUmemGenericAllocationHandle *handle = &g->small_handles[g->small_pages];
+                PhysicalPage **page = &g->small_physical_pages[g->small_pages];
                 CUdeviceptr addr = virtual_range_get(g->small_base) + g->small_pages * MG_PAGE;
-                CUresult r = create_page(g, handle);
+                CUresult r = create_page(g, page);
                 RETURN_G_FAILED(r, true);
                 g->small_pages++;
-                RETURN_G_FAILED(cuMemMap(addr, MG_PAGE, 0, *handle, 0) ||
-                                cuMemSetAccess(addr, MG_PAGE, &access, 1), true);
+                RETURN_G_FAILED(map_reference(g, addr, *page,
+                                &g->small_mapped_pages[g->small_pages - 1]), true);
             }
             g->small_size = end;
         }
@@ -739,24 +753,22 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     }
 
     for (size_t i = 0; i < g->va_count; i++) {
-        if (g->va_phys[i] >= 0) {
-            cuMemUnmap(virtual_range_get(g->base) + i * MG_PAGE, MG_PAGE);
+        if (g->mapped_pages[i]) {
+            physical_page_unref(g->mapped_pages[i]);
         }
     }
 
     for (size_t i = 0; i < g->phys_count; i++) {
-        cuMemRelease(g->physical_handles[i]);
+        physical_page_unref(g->physical_pages[i]);
     }
 
     for (size_t i = 0; i < g->small_pages; i++) {
-        cuMemUnmap(virtual_range_get(g->small_base) + i * MG_PAGE, MG_PAGE);
-        cuMemRelease(g->small_handles[i]);
+        physical_page_unref(g->small_mapped_pages[i]);
+        physical_page_unref(g->small_physical_pages[i]);
     }
 
     virtual_range_unref(g->base);
     virtual_range_unref(g->small_base);
-    total_vram_usage -= (g->phys_count + g->small_pages) * MG_PAGE;
-
     free_small_ranges(g->root.small_snapshot);
     free_small_ranges(g->small_ranges);
     free(g->root.snapshot);
