@@ -27,6 +27,10 @@ class MallocGraph:
             self._scopes.pop()
         return broken
 
+    def abort(self):
+        self._call(control.lib.malloc_graph_abort)
+        self._scopes.clear()
+
     def pause(self, sync=False):
         self._call(control.lib.malloc_graph_pause, True, sync)
 

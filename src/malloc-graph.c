@@ -119,6 +119,7 @@ typedef struct {
     bool sync_paused;
     bool assert_breaks;
     bool handoff_attempted;
+    bool aborted;
 } MallocGraph;
 
 static _Thread_local MallocGraph *active_graph;
@@ -654,6 +655,35 @@ static void free_rogue_candidates(MallocGraph *g) {
     }
 }
 
+static bool abort_graph(MallocGraph *g) {
+    if (g->aborted) {
+        return true;
+    }
+    if (g->handoff_attempted) {
+        return false;
+    }
+    g->handoff_attempted = true;
+
+    State *top = g->state;
+    for (State *state = top; state; state = state->next) {
+        g->state = state;
+        if (!materialize(g, state->cursor) || !collect_rogue_candidates(g)) {
+            g->state = top;
+            active_graph = NULL;
+            return false;
+        }
+    }
+    g->state = top;
+    active_graph = NULL;
+
+    if (!handoff_rogues(g)) {
+        return false;
+    }
+    free_rogue_candidates(g);
+    g->aborted = true;
+    return true;
+}
+
 static bool finalize_rogues(MallocGraph *g) {
     if (!g->rogue_candidates) {
         return true;
@@ -1152,6 +1182,16 @@ SHARED_EXPORT int malloc_graph_pop(void *handle) {
     return result;
 }
 
+SHARED_EXPORT bool malloc_graph_abort(void *handle) {
+    MallocGraph *g = handle;
+
+    if (!g || g->owner_thread != &active_graph ||
+        (!g->aborted && g != active_graph)) {
+        return false;
+    }
+    return abort_graph(g);
+}
+
 SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
     MallocGraph *g = handle;
 
@@ -1196,15 +1236,8 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
         return;
     }
 
-    if (active_graph == g) {
-        active_graph = NULL;
-    }
-
-    if (g->rogue_candidates) {
-        if (!g->handoff_attempted) {
-            handoff_rogues(g);
-        }
-        free_rogue_candidates(g);
+    if (g->state && !abort_graph(g)) {
+        return;
     }
 
     while (g->state) {
