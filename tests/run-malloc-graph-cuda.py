@@ -48,6 +48,7 @@ TESTS = (
     "malloc-graph-rogue-alias-cuda.py",
     "malloc-graph-rogue-reuse-cuda.py",
     "malloc-graph-small-rogue-cuda.py",
+    "malloc-graph-abort-cuda.py",
 )
 
 directory = Path(__file__).parent

@@ -125,6 +125,9 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.malloc_graph_pop.argtypes = [ctypes.c_void_p]
     lib.malloc_graph_pop.restype = ctypes.c_int
 
+    lib.malloc_graph_abort.argtypes = [ctypes.c_void_p]
+    lib.malloc_graph_abort.restype = ctypes.c_bool
+
     lib.malloc_graph_stat.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.malloc_graph_stat.restype = ctypes.c_uint64
 
