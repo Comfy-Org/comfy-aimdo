@@ -770,6 +770,7 @@ static bool finalize_rogues(MallocGraph *g) {
     g->used = allocation_used(g);
 
     free_rogue_candidates(g);
+    g->handoff_attempted = false;
     return true;
 
 fail:
