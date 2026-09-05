@@ -146,6 +146,10 @@ def init_devices(device_ids):
     if lib is None:
         return False
 
+    if devctxs:
+        logging.warning("comfy-aimdo devices are already initialized, call deinit() first")
+        return False
+
     requested = []
     headrooms = []
     for device_id in device_ids:
