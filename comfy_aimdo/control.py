@@ -101,6 +101,9 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.set_simple_vram_headroom.argtypes = [ctypes.c_int64]
     lib.set_simple_vram_headroom.restype = None
 
+    lib.get_simple_vram_headroom.argtypes = []
+    lib.get_simple_vram_headroom.restype = ctypes.c_int64
+
     lib.set_nvml_pressure.argtypes = [ctypes.c_bool]
     lib.set_nvml_pressure.restype = None
 
@@ -193,6 +196,33 @@ def get_devctx(device_id: int):
     if devctx:
         return devctx
     raise RuntimeError(f"comfy-aimdo device {device_id} is not initialized")
+
+def set_simple_vram_headroom(headroom: int):
+    """Set the VRAM the simple budget keeps free, in bytes.
+
+    One process wide value, compared against each device's own capacity. It
+    is separate from the per device extra_vram_headroom given to
+    init_devices(). Only the simple budget term reads it; the measured poll
+    term keeps its own compile time floor of 256 MB (VRAM_HEADROOM) and the
+    budget takes the larger of the two, so raising this above 256 MB is
+    honoured but lowering it below 256 MB changes nothing. Raising it takes
+    effect at the next VBAR fault or hooked device allocation and is honoured
+    by evicting VBAR pages only; torch allocations are counted against it
+    but never refused. Lowering it does not refill anything by itself: pages
+    come back when a VBAR is next prioritized, which ComfyUI does when it
+    loads a model.
+    """
+    headroom = int(headroom)
+    if headroom < 0 or headroom > (1 << 60):
+        raise ValueError("simple_vram_headroom must be between 0 and 2**60 bytes")
+    if lib is None:
+        raise RuntimeError("comfy-aimdo is not initialized")
+    lib.set_simple_vram_headroom(headroom)
+
+def get_simple_vram_headroom():
+    if lib is None:
+        raise RuntimeError("comfy-aimdo is not initialized")
+    return int(lib.get_simple_vram_headroom())
 
 def deinit():
     global lib, devctxs, _log_callback
