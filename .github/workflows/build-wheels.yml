@@ -68,7 +68,7 @@ jobs:
           popd
 
           del /q comfy_aimdo\*.dll 2>nul
-          cl.exe /LD /O2 /DAIMDO_CUDA ^
+          cl.exe /LD /O2 ^
             src/*.c src-cuda/dispatch.c src-win/*.c ^
             /Isrc /Isrc-win /IC:/Detours/include /FIcompiler.h /Fe:comfy_aimdo/aimdo.dll ^
             /link /LIBPATH:%DETOURS_LIB_DIR% ^
