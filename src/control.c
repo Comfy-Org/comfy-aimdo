@@ -65,6 +65,11 @@ void set_simple_vram_headroom(int64_t bytes) {
 }
 
 SHARED_EXPORT
+int64_t get_simple_vram_headroom(void) {
+    return simple_vram_headroom;
+}
+
+SHARED_EXPORT
 void set_nvml_pressure(bool enabled) {
     nvml_pressure = enabled;
 }
