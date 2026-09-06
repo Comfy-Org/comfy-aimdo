@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "malloc-rogue.h"
 
 /* cudaMalloc does not guarantee fragmentation handling as well as cudaMallocAsync,
  * so we reserve a small extra headroom when forcing budget pressure.
@@ -41,10 +42,10 @@ static inline void st_cleanup(void) {
     free(lock);
     size_table_lock = NULL;
 }
-static inline void st_lock(void) {
+void allocations_lock(void) {
     EnterCriticalSection((CRITICAL_SECTION *)size_table_lock);
 }
-static inline void st_unlock(void) { LeaveCriticalSection((CRITICAL_SECTION *)size_table_lock); }
+void allocations_unlock(void) { LeaveCriticalSection((CRITICAL_SECTION *)size_table_lock); }
 #else
 #include <pthread.h>
 
@@ -72,8 +73,8 @@ static inline void st_cleanup(void) {
     size_table_lock = NULL;
 }
 
-static inline void st_lock(void) { pthread_mutex_lock((pthread_mutex_t *)size_table_lock); }
-static inline void st_unlock(void) { pthread_mutex_unlock((pthread_mutex_t *)size_table_lock); }
+void allocations_lock(void) { pthread_mutex_lock((pthread_mutex_t *)size_table_lock); }
+void allocations_unlock(void) { pthread_mutex_unlock((pthread_mutex_t *)size_table_lock); }
 #endif
 
 bool allocations_init(void) {
@@ -109,7 +110,7 @@ static inline void account_alloc(CUdeviceptr ptr, size_t size) {
     unsigned int h = size_hash(ptr);
     SizeEntry *entry;
 
-    st_lock();
+    allocations_lock();
     total_vram_usage += accounted_alloc_size(size);
 
     entry = (SizeEntry *)malloc(sizeof(*entry));
@@ -119,7 +120,7 @@ static inline void account_alloc(CUdeviceptr ptr, size_t size) {
         entry->next = size_table[h];
         size_table[h] = entry;
     }
-    st_unlock();
+    allocations_unlock();
 }
 
 static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
@@ -127,7 +128,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
     SizeEntry **prev;
     unsigned int h = size_hash(ptr);
 
-    st_lock();
+    allocations_lock();
     entry = size_table[h];
     prev = &size_table[h];
 
@@ -138,16 +139,31 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", ptr, entry->size / K, hStream);
             total_vram_usage -= accounted_alloc_size(entry->size);
 
-            st_unlock();
+            allocations_unlock();
             free(entry);
             return;
         }
         prev = &entry->next;
         entry = entry->next;
     }
-    st_unlock();
+    allocations_unlock();
 
     log(DEBUG, "%s: could not account free at %p\n", __func__, (void *)(uintptr_t)ptr);
+}
+
+static size_t allocation_size(CUdeviceptr ptr) {
+    SizeEntry *entry;
+    size_t size = 0;
+
+    allocations_lock();
+    for (entry = size_table[size_hash(ptr)]; entry; entry = entry->next) {
+        if (entry->ptr == ptr) {
+            size = entry->size;
+            break;
+        }
+    }
+    allocations_unlock();
+    return size;
 }
 
 int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
@@ -196,6 +212,9 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFree_v2(devPtr);
     }
+    if (free_rogue(devPtr, &status)) {
+        return status;
+    }
 
     status = true_cuMemFree_v2(devPtr);
     if (!CHECK_CU(status)) {
@@ -219,10 +238,14 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemAllocAsync(devPtr, size, hStream);
     }
+    if (malloc_graph_alloc(devPtr, size, hStream)) {
+        return *devPtr ? 0 : CUDA_ERROR_OUT_OF_MEMORY;
+    }
 
     vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
 
-    if (CHECK_CU(true_cuMemAllocAsync(&dptr, size, hStream))) {
+    status = true_cuMemAllocAsync(&dptr, size, hStream);
+    if (CHECK_CU(status)) {
         *devPtr = dptr;
         goto success;
     }
@@ -257,6 +280,12 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     }
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemFreeAsync(devPtr, hStream);
+    }
+    if (free_rogue(devPtr, &status)) {
+        return status;
+    }
+    if (malloc_graph_free(devPtr, allocation_size(devPtr), hStream, &status)) {
+        return status;
     }
 
     status = true_cuMemFreeAsync(devPtr, hStream);
