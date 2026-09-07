@@ -66,6 +66,7 @@ class MallocGraph:
     peak_used = property(lambda self: self._stat(0))
     virtual_bytes = property(lambda self: self._stat(1))
     physical_bytes = property(lambda self: self._stat(2))
+    rogue_count = property(lambda self: self._stat(3))
 
     def __del__(self):
         handle = getattr(self, "_handle", None)

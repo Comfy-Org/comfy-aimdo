@@ -112,6 +112,7 @@ typedef struct {
     size_t small_pages;
     size_t used;
     size_t peak_used;
+    size_t rogue_count;
 
     bool failed;
     bool complete;
@@ -310,6 +311,7 @@ static bool collect_rogue_candidates(MallocGraph *g) {
         }
         allocation->allocation_previous = g->rogue_candidates;
         g->rogue_candidates = allocation;
+        g->rogue_count++;
         allocation = previous;
     }
     g->state->allocations = NULL;
@@ -1206,6 +1208,8 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
         return (g->va_count + g->small_pages) * MG_PAGE;
     case 2:
         return (g->phys_count + g->small_pages) * MG_PAGE;
+    case 3:
+        return g->rogue_count;
     default:
         return 0;
     }
