@@ -225,11 +225,11 @@ void *vbar_allocate(void *devctx, uint64_t size, int device) {
     log(DEBUG, "%s (start): size=%zuM, device=%d\n", __func__, size / M, device);
     vbars_dirty = true;
 
+    /* Reserve the window the caller asked for. vram_capacity is physical VRAM and
+     * says nothing about how much of the window gets sub-allocated, so clamping to
+     * it made an oversized request reserve capacity worth of address space.
+     */
     size_t nr_pages = VBAR_GET_PAGE_NR_UP(size);
-    size_t nr_pages_max = VBAR_GET_PAGE_NR(vram_capacity);
-    if (nr_pages_max < nr_pages) {
-        nr_pages = nr_pages_max;
-    }
     size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
