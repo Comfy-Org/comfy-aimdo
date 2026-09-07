@@ -1,4 +1,5 @@
 #include "vrambuf.h"
+#include "thread-plat.h"
 
 #if defined(__HIP_PLATFORM_AMD__) && !defined(_WIN32)
 #  define VRAM_CHUNK_SIZE      CUDA_PAGE_SIZE
@@ -11,6 +12,38 @@
  * and reuse it per max_size on the current device context; physical VRAM is
  * still released on destroy, only the reserve/free pair is elided. */
 
+#if defined(__HIP_PLATFORM_AMD__) && defined(_WIN32)
+/* The pool hangs off AimdoContext, which is shared by every thread bound to the
+ * device, and vrambuf_destroy runs on whichever thread drops the last python
+ * reference. The list therefore needs the same treatment as the size table.
+ */
+bool va_pool_init(void) {
+    return (va_pool_lock = (void *)mutex_create()) != NULL;
+}
+
+void va_pool_cleanup(void) {
+    VramBuffer *buf;
+
+    if (!va_pool_lock) {
+        return;
+    }
+
+    mutex_lock((Mutex)va_pool_lock);
+    for (buf = va_pool; buf; ) {
+        VramBuffer *next = buf->next;
+
+        CHECK_CU(cuMemAddressFree(buf->base_ptr, buf->max_size));
+        free(buf);
+        buf = next;
+    }
+    va_pool = NULL;
+    mutex_unlock((Mutex)va_pool_lock);
+
+    mutex_destroy((Mutex)va_pool_lock);
+    va_pool_lock = NULL;
+}
+#endif
+
 SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
     VramBuffer *buf;
@@ -22,14 +55,17 @@ void *vrambuf_create(int device, size_t max_size) {
     max_size = CUDA_ALIGN_UP(max_size);
 
 #if defined(__HIP_PLATFORM_AMD__) && defined(_WIN32)
+    mutex_lock((Mutex)va_pool_lock);
     for (VramBuffer **p = &va_pool; *p; p = &(*p)->next) {
         if ((*p)->max_size == max_size) {
             buf = *p;
             *p = buf->next;
             buf->next = NULL;
+            mutex_unlock((Mutex)va_pool_lock);
             return (void *)buf;
         }
     }
+    mutex_unlock((Mutex)va_pool_lock);
 #endif
 
     buf = (VramBuffer *)calloc(1, sizeof(*buf) + sizeof(CUmemGenericAllocationHandle) * max_size / VRAM_CHUNK_SIZE);
@@ -134,8 +170,10 @@ bool vrambuf_destroy(void *arg) {
     /* VRAM freed; keep the VA reservation and park it for reuse. */
     buf->allocated = 0;
     buf->handle_count = 0;
+    mutex_lock((Mutex)va_pool_lock);
     buf->next = va_pool;
     va_pool = buf;
+    mutex_unlock((Mutex)va_pool_lock);
     return true;
 #else
     CHECK_CU(cuMemAddressFree(buf->base_ptr, buf->max_size));

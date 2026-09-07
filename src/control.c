@@ -2,7 +2,7 @@
 #include "aimdo-time.h"
 #include "xfer-file.h"
 
-#if !defined(_WIN32) && !defined(_WIN64) && defined(AIMDO_CUDA)
+#if !defined(_WIN32) && !defined(_WIN64)
 #define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)
 #define INTEGRATED_RAM_HEADROOM_MAX (8ULL * G)
 #define INTEGRATED_SIMPLE_ONLY_DEFICIT (-(ssize_t)(1ULL << 60))
@@ -145,7 +145,7 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
     control_timestamp_last_check = now;
     total_vram_last_check = total_vram_usage;
 
-#if !defined(_WIN32) && !defined(_WIN64) && defined(AIMDO_CUDA)
+#if !defined(_WIN32) && !defined(_WIN64)
     if (integrated_device) {
         size_t mem_available = 0;
 
@@ -214,6 +214,7 @@ void cleanup(void) {
         set_devctx(&g_all_devctxs[i]);
         hostbuf_file_reader_cleanup();
         aimdo_wddm_cleanup();
+        va_pool_cleanup();
         allocations_cleanup();
 
         free(highest_priority_p); /* FIXME: move the model_vbar. */
@@ -247,12 +248,13 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
         set_devctx(devctx);
 
         if (!allocations_init() ||
+            !va_pool_init() ||
             !CHECK_CU(cuDeviceGet(&dev, cuda_device_ids[i])) ||
             !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev))) {
             goto fail;
         }
 
-#if !defined(_WIN32) && !defined(_WIN64) && defined(AIMDO_CUDA)
+#if !defined(_WIN32) && !defined(_WIN64)
         devctx->_integrated_device = is_integrated_cuda_device(dev);
         if (devctx->_integrated_device) {
             devctx->_integrated_ram_headroom = calculate_integrated_ram_headroom(vram_capacity);

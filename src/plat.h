@@ -221,6 +221,15 @@ fail:
     return err;
 }
 
+/* vrambuf.c */
+#if defined(__HIP_PLATFORM_AMD__) && defined(_WIN32)
+bool va_pool_init(void);
+void va_pool_cleanup(void);
+#else
+static inline bool va_pool_init(void) { return true; }
+static inline void va_pool_cleanup(void) {}
+#endif
+
 /* model_vbar.c */
 size_t vbars_free(ssize_t size);
 SHARED_EXPORT

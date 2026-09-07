@@ -28,6 +28,8 @@ def _native_log(level, message):
 
 def detect_vendor():
     version = ""
+    hip = None
+    cuda = None
     try:
         torch_spec = importlib.util.find_spec("torch")
         for folder in torch_spec.submodule_search_locations:
@@ -37,9 +39,18 @@ def detect_vendor():
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 version = module.__version__
+                hip = getattr(module, "hip", None)
+                cuda = getattr(module, "cuda", None)
     except Exception as e:
         logging.warning("Failed to detect Torch version")
         pass
+
+    # torch.version.hip/cuda are authoritative. The local version segment is only
+    # a fallback: ROCm nightlies do not always carry a +rocm suffix.
+    if hip:
+        return "rocm"
+    if cuda:
+        return "cuda"
 
     if '+cu' in version:
         return "cuda"
