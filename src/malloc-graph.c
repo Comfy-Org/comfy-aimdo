@@ -976,7 +976,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     return true;
 }
 
-bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result) {
+bool malloc_graph_free(CUdeviceptr ptr, CUstream stream, int *result) {
     MallocGraph *g = active_graph;
 
     if (!g || graph_failed(g) || g->paused || stream != g->stream) {
@@ -987,7 +987,6 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
     CUdeviceptr small_base = virtual_range_get(g->small_base);
     bool small = ptr >= small_base && ptr < small_base + MG_SMALL_PAGES * MG_PAGE;
     if (!small && (ptr < base || ptr >= base + MG_PAGES * MG_PAGE)) {
-        RETURN_G_FAILED(size, false);
         return false;
     }
 
