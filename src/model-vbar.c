@@ -225,11 +225,18 @@ void *vbar_allocate(void *devctx, uint64_t size, int device) {
     log(DEBUG, "%s (start): size=%zuM, device=%d\n", __func__, size / M, device);
     vbars_dirty = true;
 
-    /* Reserve the window the caller asked for. vram_capacity is physical VRAM and
-     * says nothing about how much of the window gets sub-allocated, so clamping to
-     * it made an oversized request reserve capacity worth of address space.
+    /* Reserve the window the caller asked for. Physical VRAM capacity does not
+     * limit how much virtual address space the model may sub-allocate.
      */
+    if (!size || size > UINT64_MAX - (VBAR_PAGE_SIZE - 1)) {
+        log(AIMDO_LOG_ERROR, "Invalid VBAR size: %llu\n", (ull)size);
+        return NULL;
+    }
     size_t nr_pages = VBAR_GET_PAGE_NR_UP(size);
+    if (nr_pages > (SIZE_MAX - sizeof(*mv)) / sizeof(mv->residency_map[0])) {
+        log(AIMDO_LOG_ERROR, "VBAR residency map is too large\n");
+        return NULL;
+    }
     size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {

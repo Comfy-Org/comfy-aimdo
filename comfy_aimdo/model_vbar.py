@@ -48,8 +48,12 @@ if lib is not None:
 
 class ModelVBAR:
     def __init__(self, size, device):
+        size = int(size)
+        max_size = ctypes.c_uint64(-1).value - (32 * 1024 ** 2 - 1)
+        if size <= 0 or size > max_size:
+            raise ValueError("Invalid VBAR size")
         self._devctx = control.get_devctx(device)
-        self._ptr = lib.vbar_allocate(self._devctx, int(size), device)
+        self._ptr = lib.vbar_allocate(self._devctx, size, device)
         if not self._ptr:
             raise MemoryError("VBAR allocation failed")
         self.device = device
