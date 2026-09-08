@@ -21,6 +21,7 @@ nested = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 nested.fill_(23)
 graph.abort()
 graph.abort()
+assert graph.rogue_count == 2
 del graph
 gc.collect()
 

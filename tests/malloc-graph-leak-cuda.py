@@ -16,6 +16,7 @@ value = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
 pointer = value.data_ptr()
 value.fill_(17)
 graph.pop()
+assert graph.rogue_count == 1
 
 graph.push()
 replacement = torch.empty(8 * M, dtype=torch.uint8, device="cuda")
@@ -23,6 +24,7 @@ assert replacement.data_ptr() != pointer
 replacement.fill_(23)
 del replacement
 graph.pop()
+assert graph.rogue_count == 1
 assert value[0].item() == 17
 
 del graph
