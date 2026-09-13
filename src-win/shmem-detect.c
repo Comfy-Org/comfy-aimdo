@@ -150,7 +150,7 @@ fail:
         g_dxcore_adapter->lpVtbl->Release(g_dxcore_adapter);
         g_dxcore_adapter = NULL;
     }
-    log(WARNING, "comfy-aimdo WDDM init failed (%d). aimdo is blind to the CUDA Sysmem Fallback Policy\n", fail_code);
+    log(WARNING, "comfy-aimdo WDDM init failed (%d). aimdo is blind to the driver sysmem fallback policy\n", fail_code);
     return false;
 }
 

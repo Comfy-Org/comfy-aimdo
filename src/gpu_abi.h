@@ -31,8 +31,16 @@ typedef struct CUuuid_st {
     char bytes[16];
 } CUuuid;
 
+/* hipDeviceAttribute_t is not numerically compatible with CUdevice_attribute.
+ * hipDeviceAttributeIntegrated is 16, so querying a HIP device with the CUDA
+ * value would read hipDeviceAttributeKernelExecTimeout instead.
+ */
 typedef enum CUdevice_attribute_enum {
+#if defined(__HIP_PLATFORM_AMD__)
+    CU_DEVICE_ATTRIBUTE_INTEGRATED = 16,
+#else
     CU_DEVICE_ATTRIBUTE_INTEGRATED = 18,
+#endif
 } CUdevice_attribute;
 
 typedef enum cudaError_enum {

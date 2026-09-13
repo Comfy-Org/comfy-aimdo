@@ -31,9 +31,14 @@ static CUresult CUDAAPI aimdo_hip_mem_alloc_host(void **pp, size_t bytesize) {
 static const DispatchSymbol dispatch_symbols[] = {
     { (void **)&g_cuda.p_cuInit, "hipInit" },
     { (void **)&g_cuda.p_cuGetErrorString, "hipDrvGetErrorString" },
+    /* hipGetDevice cannot report the absent-context failure cuCtxGetDevice uses,
+     * but HIP binds an unbound thread to device 0 and allocates there, so
+     * following the current device stays correct.
+     */
     { (void **)&g_cuda.p_cuCtxGetDevice, "hipGetDevice" },
     { (void **)&g_cuda.p_cuCtxSynchronize, "hipDeviceSynchronize" },
     { (void **)&g_cuda.p_cuDeviceGet, "hipDeviceGet" },
+    { (void **)&g_cuda.p_cuDeviceGetAttribute, "hipDeviceGetAttribute" },
     { (void **)&g_cuda.p_cuDeviceTotalMem, "hipDeviceTotalMem" },
     { (void **)&g_cuda.p_cuDeviceGetName, "hipDeviceGetName" },
     { (void **)&g_cuda.p_cuMemGetInfo, "hipMemGetInfo" },
@@ -61,8 +66,8 @@ static const DispatchSymbol dispatch_symbols[] = {
 
 static const char *const hip_library_names[] = {
 #if defined(_WIN32) || defined(_WIN64)
-    "amdhip64.dll",
     "amdhip64_7.dll",
+    "amdhip64.dll",
 #else
     "libamdhip64.so.7",
     "libamdhip64.so.6",
@@ -106,9 +111,15 @@ bool aimdo_cuda_runtime_init(void) {
     g_cuda.p_cuMemAllocAsync_ptsz = g_cuda.p_cuMemAllocAsync;
     g_cuda.p_cuMemFreeAsync_ptsz = g_cuda.p_cuMemFreeAsync;
 
-    g_device_get_properties = (PFN_deviceGetProperties)aimdo_hip_resolve_symbol("hipGetDevicePropertiesR0600");
+    /* Only the R0600 revision is usable: callers read the uuid and luid fields,
+     * which the R0000 struct does not have. The unversioned hipGetDeviceProperties
+     * export still resolves on current runtimes but carries the R0000 layout, so
+     * falling back to it would hand back an unrelated LUID.
+     */
+    g_device_get_properties =
+        (PFN_deviceGetProperties)aimdo_hip_resolve_symbol("hipGetDevicePropertiesR0600");
     if (!g_device_get_properties) {
-        g_device_get_properties = (PFN_deviceGetProperties)aimdo_hip_resolve_symbol("hipGetDeviceProperties");
+        log(WARNING, "%s: hipGetDevicePropertiesR0600 unavailable\n", __func__);
     }
 
     {

@@ -151,21 +151,6 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
     log(DEBUG, "%s: could not account free at %p\n", __func__, (void *)(uintptr_t)ptr);
 }
 
-static size_t allocation_size(CUdeviceptr ptr) {
-    SizeEntry *entry;
-    size_t size = 0;
-
-    allocations_lock();
-    for (entry = size_table[size_hash(ptr)]; entry; entry = entry->next) {
-        if (entry->ptr == ptr) {
-            size = entry->size;
-            break;
-        }
-    }
-    allocations_unlock();
-    return size;
-}
-
 int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
                       CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
     CUdeviceptr dptr;
@@ -284,7 +269,7 @@ int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
     if (free_rogue(devPtr, &status)) {
         return status;
     }
-    if (malloc_graph_free(devPtr, allocation_size(devPtr), hStream, &status)) {
+    if (malloc_graph_free(devPtr, hStream, &status)) {
         return status;
     }
 

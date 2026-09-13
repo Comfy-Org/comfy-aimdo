@@ -112,6 +112,7 @@ typedef struct {
     size_t small_pages;
     size_t used;
     size_t peak_used;
+    size_t rogue_count;
 
     bool failed;
     bool complete;
@@ -310,6 +311,7 @@ static bool collect_rogue_candidates(MallocGraph *g) {
         }
         allocation->allocation_previous = g->rogue_candidates;
         g->rogue_candidates = allocation;
+        g->rogue_count++;
         allocation = previous;
     }
     g->state->allocations = NULL;
@@ -976,7 +978,7 @@ bool malloc_graph_alloc(CUdeviceptr *ptr, size_t size, CUstream stream) {
     return true;
 }
 
-bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *result) {
+bool malloc_graph_free(CUdeviceptr ptr, CUstream stream, int *result) {
     MallocGraph *g = active_graph;
 
     if (!g || graph_failed(g) || g->paused || stream != g->stream) {
@@ -987,7 +989,6 @@ bool malloc_graph_free(CUdeviceptr ptr, size_t size, CUstream stream, int *resul
     CUdeviceptr small_base = virtual_range_get(g->small_base);
     bool small = ptr >= small_base && ptr < small_base + MG_SMALL_PAGES * MG_PAGE;
     if (!small && (ptr < base || ptr >= base + MG_PAGES * MG_PAGE)) {
-        RETURN_G_FAILED(size, false);
         return false;
     }
 
@@ -1207,6 +1208,8 @@ SHARED_EXPORT uint64_t malloc_graph_stat(void *handle, int which) {
         return (g->va_count + g->small_pages) * MG_PAGE;
     case 2:
         return (g->phys_count + g->small_pages) * MG_PAGE;
+    case 3:
+        return g->rogue_count;
     default:
         return 0;
     }
