@@ -105,9 +105,9 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $dest = "$env:LOCALAPPDATA\pypa\cibuildwheel\Cache\virtualenv-20.26.6.pyz"
+          $dest = "$env:LOCALAPPDATA\pypa\cibuildwheel\Cache\virtualenv-20.30.0.pyz"
           New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
-          $url = "https://raw.githubusercontent.com/pypa/get-virtualenv/20.26.6/public/virtualenv.pyz"
+          $url = "https://raw.githubusercontent.com/pypa/get-virtualenv/20.30.0/public/virtualenv.pyz"
           Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
           Write-Host "✅ Downloaded virtualenv.pyz"
 
