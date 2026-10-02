@@ -51,12 +51,34 @@ static FILE *test_meminfo(const char *path, const char *mode) {
 #endif
 
 AimdoCudaDispatch g_cuda;
+PFN_deviceGetProperties g_device_get_properties;
 int log_level = -1;
 uint64_t log_shot_counter;
 
 void aimdo_log(int level, const char *file, int line, const char *format, ...) {}
 
+/* The included production files also contain lifecycle APIs, unused by this test.
+ * MSVC requires their dependencies even when the functions are discarded.
+ */
+bool aimdo_cuda_runtime_init(void) { abort(); }
+void aimdo_cuda_runtime_cleanup(void) { abort(); }
+bool aimdo_setup_hooks(void) { abort(); }
+void aimdo_teardown_hooks(void) { abort(); }
+void log_reset_shots(void) { abort(); }
+uint64_t vbars_analyze(void *devctx, bool only_dirty) { abort(); }
+bool allocations_init(void) { abort(); }
+void allocations_cleanup(void) { abort(); }
+void allocations_analyze(bool only_dirty) { abort(); }
+bool xfer_file_init(void) { abort(); }
+void xfer_file_cleanup(void) { abort(); }
+void hostbuf_file_reader_cleanup(void) { abort(); }
+#if defined(__HIP_PLATFORM_AMD__) && defined(_WIN32)
+bool va_pool_init(void) { abort(); }
+void va_pool_cleanup(void) { abort(); }
+#endif
+
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
+bool aimdo_nvml_device_init(CUdevice device, void **handle) { abort(); }
 bool aimdo_nvml_memory_info(void *handle, size_t *free_bytes, size_t *total_bytes) {
     assert(!"NVML must not be queried for integrated RAM pressure");
     return false;
