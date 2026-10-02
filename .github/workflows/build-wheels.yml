@@ -61,6 +61,13 @@ jobs:
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
           call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" %VCVARS_ARCH%
 
+          cl.exe /O2 /Gy /DAIMDO_CUDA /Isrc /Isrc-win /FIcompiler.h ^
+            tests/integrated-ram-pressure.c /Fe:pressure-test-cuda.exe /link /OPT:REF dxgi.lib dxguid.lib || exit /b 1
+          pressure-test-cuda.exe || exit /b 1
+          cl.exe /O2 /Gy /D__HIP_PLATFORM_AMD__ /Isrc /Isrc-win /FIcompiler.h ^
+            tests/integrated-ram-pressure.c /Fe:pressure-test-hip.exe /link /OPT:REF dxgi.lib dxguid.lib || exit /b 1
+          pressure-test-hip.exe || exit /b 1
+
           if exist C:\Detours rmdir /s /q C:\Detours
           git clone --depth 1 https://github.com/microsoft/Detours.git C:\Detours
           pushd C:\Detours

@@ -2,7 +2,6 @@
 #include "aimdo-time.h"
 #include "xfer-file.h"
 
-#if !defined(_WIN32) && !defined(_WIN64)
 #define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)
 #define INTEGRATED_RAM_HEADROOM_MAX (8ULL * G)
 #define INTEGRATED_SIMPLE_ONLY_DEFICIT (-(ssize_t)(1ULL << 60))
@@ -28,6 +27,15 @@ static bool is_integrated_cuda_device(CUdevice dev) {
 }
 
 static bool read_mem_available_bytes(size_t *mem_available_bytes) {
+#if defined(_WIN32) || defined(_WIN64)
+    MEMORYSTATUSEX status = {.dwLength = sizeof(status)};
+
+    if (!GlobalMemoryStatusEx(&status)) {
+        return false;
+    }
+    *mem_available_bytes = (size_t)status.ullAvailPhys;
+    return true;
+#else
     char line[256];
     FILE *handle;
 
@@ -47,8 +55,8 @@ static bool read_mem_available_bytes(size_t *mem_available_bytes) {
 
     fclose(handle);
     return false;
-}
 #endif
+}
 
 _Thread_local AimdoContext *g_devctx;
 int64_t simple_vram_headroom = VRAM_HEADROOM;
@@ -145,7 +153,6 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
     control_timestamp_last_check = now;
     total_vram_last_check = total_vram_usage;
 
-#if !defined(_WIN32) && !defined(_WIN64)
     if (integrated_device) {
         size_t mem_available = 0;
 
@@ -155,7 +162,11 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
         }
 
         deficit_sync = (ssize_t)integrated_ram_headroom - (ssize_t)mem_available;
+#if defined(_WIN32) || defined(_WIN64)
+        *prevailing_deficit_method = "GlobalMemoryStatusEx (integrated RAM)";
+#else
         *prevailing_deficit_method = "/proc/meminfo (integrated RAM)";
+#endif
         log(DEBUG,
             "%s: MemAvailable poll available=%zu MB headroom=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
             __func__, mem_available / M, integrated_ram_headroom / M,
@@ -163,7 +174,6 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
         log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
         return true;
     }
-#endif
 
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
     used_nvml = nvml_device && aimdo_nvml_memory_info(nvml_device, &free_vram, &total_vram);
@@ -254,14 +264,12 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
             goto fail;
         }
 
-#if !defined(_WIN32) && !defined(_WIN64)
         devctx->_integrated_device = is_integrated_cuda_device(dev);
         if (devctx->_integrated_device) {
             devctx->_integrated_ram_headroom = calculate_integrated_ram_headroom(vram_capacity);
-            log(INFO, "comfy-aimdo integrated Linux GPU RAM headroom: %zu MB\n",
+            log(INFO, "comfy-aimdo integrated graphics RAM headroom: %zu MB\n",
                 integrated_ram_headroom / M);
         }
-#endif
 
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
         if (!integrated_device && nvml_pressure) {
@@ -272,7 +280,7 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
             }
         }
 #endif
-        if (!aimdo_wddm_init(dev)) {
+        if (!integrated_device && !aimdo_wddm_init(dev)) {
             goto fail;
         }
 

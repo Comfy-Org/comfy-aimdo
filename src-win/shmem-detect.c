@@ -115,6 +115,10 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
 
     uint64_t now = GET_TICK();
 
+    if (integrated_device) {
+        return cuda_budget_deficit(prevailing_deficit_method);
+    }
+
     if (now - wddm_timestamp_last_check < 2000) {
         return true;
     }
