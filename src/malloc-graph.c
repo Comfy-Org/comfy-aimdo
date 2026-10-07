@@ -778,9 +778,7 @@ static bool finalize_rogues(MallocGraph *g) {
 fail:
     if (replacements) {
         for (size_t phys = 0; phys < g->phys_count; phys++) {
-            if (replacements[phys]) {
-                physical_page_unref(replacements[phys]);
-            }
+            physical_page_unref(replacements[phys]);
         }
     }
     free(replacements);
@@ -1257,9 +1255,7 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
     }
 
     for (size_t i = 0; i < g->va_count; i++) {
-        if (g->mapped_pages[i]) {
-            physical_page_unref(g->mapped_pages[i]);
-        }
+        physical_page_unref(g->mapped_pages[i]);
     }
 
     for (size_t i = 0; i < g->phys_count; i++) {
