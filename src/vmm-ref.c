@@ -88,6 +88,10 @@ PhysicalPage *physical_page_ref(PhysicalPage *page, CUdeviceptr address) {
 CUresult physical_page_unref(PhysicalPage *page) {
     CUresult result = CUDA_SUCCESS;
 
+    if (!page) {
+        return CUDA_SUCCESS;
+    }
+
     allocations_lock();
     PhysicalPage **entry = &page->allocation->references;
 
