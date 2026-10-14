@@ -1,12 +1,14 @@
 import ctypes
+import logging
 
 from . import control
 
 lib = control.lib
+PageoutCallback = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_uint64, ctypes.c_uint64)
 
 # Bindings
 if lib is not None:
-    lib.vbar_allocate.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_int]
+    lib.vbar_allocate.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_int, PageoutCallback]
     lib.vbar_allocate.restype = ctypes.c_void_p
 
     lib.vbar_set_watermark_limit.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
@@ -49,9 +51,20 @@ if lib is not None:
     lib.vbar_get_residency.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
 
 class ModelVBAR:
-    def __init__(self, size, device):
+    def __init__(self, size, device, pageout_callback=None):
+        """The optional callback completes writeback before returning, without reentering VBAR APIs."""
+        def invoke(offset, size):
+            try:
+                pageout_callback(offset, size)
+                return True
+            except BaseException:
+                # ctypes cannot unwind a Python exception through the native caller.
+                logging.exception("VBAR pageout callback failed")
+                return False
+
+        self._pageout_callback = PageoutCallback(invoke) if pageout_callback is not None else PageoutCallback()
         self._devctx = control.get_devctx(device)
-        self._ptr = lib.vbar_allocate(self._devctx, int(size), device)
+        self._ptr = lib.vbar_allocate(self._devctx, int(size), device, self._pageout_callback)
         if not self._ptr:
             raise MemoryError("VBAR allocation failed")
         self.device = device
@@ -132,12 +145,16 @@ class ModelVBAR:
         lib.vbar_get_residency(self._devctx, self._ptr, buf, nr_pages)
         return list(buf)
 
-    def __del__(self):
+    def close(self):
         ptr = getattr(self, "_ptr", None)
         aimdo_lib = getattr(control, "lib", None)
         if aimdo_lib is not None and ptr:
             aimdo_lib.vbar_free(self._devctx, ptr)
             self._ptr = None
+            self._pageout_callback = None
+
+    def __del__(self):
+        self.close()
 
 def vbar_fault(alloc):
     vbar, offset, size = alloc

@@ -23,6 +23,8 @@ typedef struct ModelVBAR {
     void *lower;
 
     size_t resident_count;
+    uint64_t pageout_size;
+    bool (*pageout_callback)(uint64_t offset, uint64_t size);
 
     ResidentPage residency_map[1]; /* Must be last! */
 } ModelVBAR;
@@ -91,12 +93,25 @@ uint64_t vbars_analyze(void *devctx, bool only_dirty) {
     return (uint64_t)calculated_total_vram;
 }
 
+/* -1: writeback failed, 0: retained, 1: freed. */
 static inline int mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {
     ResidentPage *rp = &mv->residency_map[page_nr];
     CUdeviceptr vaddr = mv->vbar + page_nr * VBAR_PAGE_SIZE;
 
     do_free = do_free && rp->handle && (do_unpin || rp->pin_count == 0);
     if (do_free) {
+        if (mv->pageout_callback) {
+            uint64_t offset = page_nr * VBAR_PAGE_SIZE;
+            size_t size = MIN(VBAR_PAGE_SIZE, mv->pageout_size - offset);
+            /* Also cover eviction while malloc-graph synchronization is paused. */
+            if (!CHECK_CU(cuCtxSynchronize())) {
+                return -1;
+            }
+            /* The owner saves complete tensors intersecting this range before unmapping. */
+            if (!mv->pageout_callback(offset, size)) {
+                return -1;
+            }
+        }
         CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
         unmap_workaround(vaddr, VBAR_PAGE_SIZE);
         CHECK_CU(cuMemRelease(rp->handle));
@@ -221,8 +236,10 @@ static inline void insert_vbar_last(ModelVBAR *mv) {
     lowest_priority.higher = mv;
 }
 
+/* The optional callback completes writeback before returning. No VBAR reentry. */
 SHARED_EXPORT
-void *vbar_allocate(void *devctx, uint64_t size, int device) {
+void *vbar_allocate(void *devctx, uint64_t size, int device,
+                    bool (*pageout_callback)(uint64_t, uint64_t)) {
     ModelVBAR *mv;
 
     set_devctx((AimdoContext *)devctx);
@@ -237,12 +254,15 @@ void *vbar_allocate(void *devctx, uint64_t size, int device) {
     if (nr_pages_max < nr_pages) {
         nr_pages = nr_pages_max;
     }
-    size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
         log(CRITICAL, "Host OOM\n");
         return NULL;
     }
+
+    mv->pageout_size = size;
+    mv->pageout_callback = pageout_callback;
+    size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     /* FIXME: Do I care about alignment? Does Cuda just look after itself? */
     if (!CHECK_CU(cuMemAddressReserve(&mv->vbar, size, 0, 0, 0))) {
@@ -462,6 +482,7 @@ bool vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
             rp->pin_count--;
         }
     }
+    /* Release every consumer pin even if a subsequent writeback fails. */
     for (uint64_t page_nr = VBAR_GET_PAGE_NR(offset); page_nr < page_end && page_nr < mv->nr_pages; page_nr++) {
         if (mod1(mv, page_nr, page_nr >= mv->watermark, false) < 0) {
             return false;
@@ -485,6 +506,7 @@ void vbar_free(void *devctx, void *vbar) {
 
     CHECK_CU(cuCtxSynchronize());
 
+    mv->pageout_callback = NULL; /* Destruction discards rather than pages out. */
     for (uint64_t page_nr = 0; page_nr < mv->nr_pages; page_nr++) {
         mod1(mv, page_nr, true, true);
     }
