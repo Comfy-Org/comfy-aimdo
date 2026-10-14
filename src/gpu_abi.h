@@ -46,6 +46,7 @@ typedef enum CUdevice_attribute_enum {
 typedef enum cudaError_enum {
     CUDA_SUCCESS = 0,
     CUDA_ERROR_OUT_OF_MEMORY = 2,
+    CUDA_ERROR_UNKNOWN = 999,
 } cudaError_enum;
 
 typedef enum CUevent_flags_enum {

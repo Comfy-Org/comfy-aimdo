@@ -12,6 +12,7 @@ if lib is not None:
     lib.vbar_set_watermark_limit.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
 
     lib.vbar_set_watermark.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
+    lib.vbar_set_watermark.restype = ctypes.c_bool
 
     lib.vbars_reset_watermark_limits.argtypes = [ctypes.c_void_p]
 
@@ -28,12 +29,13 @@ if lib is not None:
     lib.vbar_fault.restype = ctypes.c_int
 
     lib.vbar_unpin.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
+    lib.vbar_unpin.restype = ctypes.c_bool
 
     lib.vbar_loaded_size.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     lib.vbar_loaded_size.restype = ctypes.c_size_t
 
     lib.vbar_free_memory.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
-    lib.vbar_free_memory.restype = ctypes.c_uint64
+    lib.vbar_free_memory.restype = ctypes.c_int64
 
     lib.vbars_analyze.argtypes = [ctypes.c_void_p, ctypes.c_bool]
     lib.vbars_analyze.restype = ctypes.c_uint64
@@ -95,7 +97,8 @@ class ModelVBAR:
 
     def unpin(self, alloc, size):
         offset = alloc - self.base_addr
-        lib.vbar_unpin(self._devctx, self._ptr, offset, size)
+        if not lib.vbar_unpin(self._devctx, self._ptr, offset, size):
+            raise RuntimeError("VBAR unpin failed")
 
     def loaded_size(self):
         return lib.vbar_loaded_size(self._devctx, self._ptr)
@@ -104,10 +107,14 @@ class ModelVBAR:
         lib.vbar_set_watermark_limit(self._devctx, self._ptr, size_bytes)
 
     def set_watermark(self, size_bytes):
-        lib.vbar_set_watermark(self._devctx, self._ptr, size_bytes)
+        if not lib.vbar_set_watermark(self._devctx, self._ptr, size_bytes):
+            raise RuntimeError("VBAR set_watermark failed")
 
     def free_memory(self, size_bytes):
-        return lib.vbar_free_memory(self._devctx, self._ptr, int(size_bytes))
+        freed = lib.vbar_free_memory(self._devctx, self._ptr, int(size_bytes))
+        if freed < 0:
+            raise RuntimeError("VBAR free_memory failed")
+        return freed
 
     def get_nr_pages(self):
         return lib.vbar_get_nr_pages(self._devctx, self._ptr)

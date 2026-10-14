@@ -109,7 +109,9 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         grow_to = buf->max_size;
     }
 
-    vbars_free(budget_deficit(grow_to - buf->allocated));
+    if (!vbars_free(budget_deficit(grow_to - buf->allocated))) {
+        return false;
+    }
     while (buf->allocated < grow_to) {
         size_t to_allocate = grow_to - buf->allocated;
         if (to_allocate > VRAM_CHUNK_SIZE) {
@@ -121,7 +123,9 @@ bool vrambuf_grow(void *arg, size_t required_size) {
                 return false;
             }
             log(DEBUG, "Pytorch allocator attempt exceeds available VRAM ...\n");
-            vbars_free(VRAM_CHUNK_SIZE);
+            if (!vbars_free(VRAM_CHUNK_SIZE)) {
+                return false;
+            }
             if ((err = three_stooges(buf->base_ptr + buf->allocated, to_allocate, buf->device, &handle)) != CUDA_SUCCESS) {
                 bool is_oom = err == CUDA_ERROR_OUT_OF_MEMORY;
                 log(is_oom ? INFO : AIMDO_LOG_ERROR, "VRAM Allocation failed (%s)\n", is_oom ? "OOM" : "error");
