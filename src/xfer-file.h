@@ -10,5 +10,10 @@ bool xfer_file_init(void);
 void xfer_file_cleanup(void);
 bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
                     size_t size, bool mark_cold);
+SHARED_EXPORT
+bool xfer_file_write(XferFileHandle file_handle, uint64_t offset, void *source,
+                     size_t size);
 bool xfer_file_read_at(XferFileHandle file_handle, uint64_t offset, void *destination,
                        size_t size, bool mark_cold);
+bool xfer_file_write_at(XferFileHandle file_handle, uint64_t offset, void *source,
+                        size_t size);

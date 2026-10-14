@@ -49,10 +49,9 @@ static HostbufFileReaderSlot *hostbuf_file_reader_next(cudaStream_t stream) {
     return slot;
 }
 
-SHARED_EXPORT
-bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_offset,
-                              uint64_t size, cudaStream_t stream,
-                              uint64_t device_ptr, bool mark_cold) {
+static bool hostbuf_file_transfer(int device, uint64_t file_handle, uint64_t file_offset,
+                                  uint64_t size, cudaStream_t stream,
+                                  uint64_t device_ptr, bool mark_cold, bool write) {
     if (size == 0) {
         return true;
     }
@@ -65,7 +64,6 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
     while (size) {
         HostbufFileReaderSlot *slot = g_devctx->_hostbuf_file_reader_active < 0 ? NULL :
             &g_devctx->_hostbuf_file_reader_slots[g_devctx->_hostbuf_file_reader_active];
-        size_t chunk;
 
         if (!slot || slot->stream != (CUstream)stream ||
             (slot->offset + size >= HOSTBUF_FILE_READER_WINDOW &&
@@ -76,30 +74,58 @@ bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_of
             }
         }
 
-        chunk = (size_t)MIN(size, HOSTBUF_FILE_READER_WINDOW - slot->offset);
-        if (!xfer_file_read(file_handle, file_offset, slot->buffer + slot->offset,
-                            chunk, mark_cold)) {
-            log(AIMDO_LOG_ERROR, "%s: file read failed handle=0x%llx offset=%llu size=%zu\n",
+        size_t chunk = (size_t)MIN(size, HOSTBUF_FILE_READER_WINDOW - slot->offset);
+        void *buffer = slot->buffer + slot->offset;
+        slot->offset += chunk;
+
+        if (!write && !xfer_file_read(file_handle, file_offset, buffer, chunk, mark_cold)) {
+            log(AIMDO_LOG_ERROR, "%s: xfer_file_read failed handle=0x%llx offset=%llu size=%zu\n",
                 __func__, (ull)file_handle, (ull)file_offset, chunk);
             return false;
         }
-        CUresult copy_result = cuMemcpyHtoDAsync((CUdeviceptr)device_ptr,
-                                                 slot->buffer + slot->offset,
-                                                 chunk, (CUstream)stream);
+
+        CUresult copy_result = write ? cuMemcpyDtoHAsync(buffer, (CUdeviceptr)device_ptr, chunk, (CUstream)stream) :
+                                      cuMemcpyHtoDAsync((CUdeviceptr)device_ptr, buffer, chunk, (CUstream)stream);
         if (!CHECK_CU(copy_result)) {
-            log(AIMDO_LOG_ERROR, "%s: device copy failed result=%d device_ptr=%p device=%d stream=%p size=%zu\n",
-                __func__, (int)copy_result, (void *)(uintptr_t)device_ptr, device,
-                (void *)stream, chunk);
+            log(AIMDO_LOG_ERROR, "%s: %s failed result=%d device_ptr=%p device=%d stream=%p size=%zu\n",
+                __func__, write ? "cuMemcpyDtoHAsync" : "cuMemcpyHtoDAsync", (int)copy_result,
+                (void *)(uintptr_t)device_ptr, device, (void *)stream, chunk);
             return false;
         }
 
-        slot->offset += chunk;
+        if (write) {
+            CUresult sync_result = cuCtxSynchronize();
+            if (!CHECK_CU(sync_result)) {
+                log(AIMDO_LOG_ERROR, "%s: cuCtxSynchronize failed result=%d device_ptr=%p device=%d stream=%p size=%zu\n",
+                    __func__, (int)sync_result, (void *)(uintptr_t)device_ptr, device, (void *)stream, chunk);
+                return false;
+            }
+            if (!xfer_file_write(file_handle, file_offset, buffer, chunk)) {
+                log(AIMDO_LOG_ERROR, "%s: xfer_file_write failed handle=0x%llx offset=%llu size=%zu\n",
+                    __func__, (ull)file_handle, (ull)file_offset, chunk);
+                return false;
+            }
+        }
+
         file_offset += chunk;
         device_ptr += chunk;
         size -= chunk;
     }
 
     return true;
+}
+
+SHARED_EXPORT
+bool hostbuf_file_reader_read(int device, uint64_t file_handle, uint64_t file_offset,
+                              uint64_t size, cudaStream_t stream,
+                              uint64_t device_ptr, bool mark_cold) {
+    return hostbuf_file_transfer(device, file_handle, file_offset, size, stream, device_ptr, mark_cold, false);
+}
+
+SHARED_EXPORT
+bool hostbuf_file_writer_write(int device, uint64_t file_handle, uint64_t file_offset,
+                               uint64_t size, cudaStream_t stream, uint64_t device_ptr) {
+    return hostbuf_file_transfer(device, file_handle, file_offset, size, stream, device_ptr, false, true);
 }
 
 SHARED_EXPORT
