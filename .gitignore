@@ -8,3 +8,11 @@ build/
 dist/
 *.egg-info/
 .venv/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+compile_commands.json
+.cache/
