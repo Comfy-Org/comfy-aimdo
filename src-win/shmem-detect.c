@@ -20,6 +20,10 @@ typedef union {
 
 bool aimdo_wddm_init(CUdevice dev)
 {
+    if (integrated_device) {
+        return true;
+    }
+
     int fail_code = 1;
     LUID cuda_luid;
     char adapter_name[256];
@@ -149,6 +153,10 @@ fail:
 
 bool poll_budget_deficit(const char **prevailing_deficit_method)
 {
+    if (integrated_device) {
+        return cuda_budget_deficit(prevailing_deficit_method);
+    }
+
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
     uint64_t effective_budget = vram_capacity;
     size_t free_vram = 0, total_vram = 0;

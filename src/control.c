@@ -264,6 +264,14 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
 #endif
 
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
+        int integrated = 0;
+        if (!CHECK_CU(cuDeviceGetAttribute(&integrated, CU_DEVICE_ATTRIBUTE_INTEGRATED, dev))) {
+            goto fail;
+        }
+        integrated_device = integrated;
+        if (integrated_device) {
+            log(INFO, "comfy-aimdo integrated Windows GPU pressure: cuMemGetInfo\n");
+        }
         if (!integrated_device && nvml_pressure) {
             if (aimdo_nvml_device_init(dev, &devctx->_nvml_device)) {
                 log(INFO, "comfy-aimdo NVML pressure enabled\n");
