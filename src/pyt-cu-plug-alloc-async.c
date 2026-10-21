@@ -164,7 +164,10 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
         return true_cuMemAlloc_v2(devPtr, size);
     }
 
-    vbars_free(budget_deficit(size + CUDA_MALLOC_HEADROOM));
+    *devPtr = 0;
+    if (!vbars_free(budget_deficit(size + CUDA_MALLOC_HEADROOM))) {
+        return CUDA_ERROR_UNKNOWN;
+    }
 
     if (CHECK_CU(true_cuMemAlloc_v2(&dptr, size))) {
         *devPtr = dptr;
@@ -172,7 +175,9 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
         return 0;
     }
 
-    vbars_free(size + CUDA_MALLOC_HEADROOM);
+    if (!vbars_free(size + CUDA_MALLOC_HEADROOM)) {
+        return CUDA_ERROR_UNKNOWN;
+    }
     status = true_cuMemAlloc_v2(&dptr, size);
     if (CHECK_CU(status)) {
         *devPtr = dptr;
@@ -223,18 +228,23 @@ int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
     if (!set_devctx_for_current_cuda_device()) {
         return true_cuMemAllocAsync(devPtr, size, hStream);
     }
-    if (malloc_graph_alloc(devPtr, size, hStream)) {
-        return *devPtr ? 0 : CUDA_ERROR_OUT_OF_MEMORY;
+    if (malloc_graph_alloc(devPtr, size, hStream, &status)) {
+        return status;
     }
 
-    vbars_free(budget_deficit(MIN(size, malloc_async_clamp)));
+    *devPtr = 0;
+    if (!vbars_free(budget_deficit(MIN(size, malloc_async_clamp)))) {
+        return CUDA_ERROR_UNKNOWN;
+    }
 
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
         *devPtr = dptr;
         goto success;
     }
-    vbars_free(size);
+    if (!vbars_free(size)) {
+        return CUDA_ERROR_UNKNOWN;
+    }
     status = true_cuMemAllocAsync(&dptr, size, hStream);
     if (CHECK_CU(status)) {
         *devPtr = dptr;

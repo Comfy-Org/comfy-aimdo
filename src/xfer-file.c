@@ -19,6 +19,7 @@ typedef struct {
     uint8_t *destination;
     size_t size;
     bool mark_cold;
+    bool write;
     XferFileWait *wait;
 } XferFileTask;
 
@@ -62,8 +63,8 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
 
     (void)arg;
     while (xfer_file_task_pop(&g_xfer_file_reader, &task)) {
-        ok = xfer_file_read_at(task.file_handle, task.offset, task.destination,
-                               task.size, task.mark_cold);
+        ok = task.write ? xfer_file_write_at(task.file_handle, task.offset, task.destination, task.size) :
+                          xfer_file_read_at(task.file_handle, task.offset, task.destination, task.size, task.mark_cold);
         mutex_lock(task.wait->mutex);
         task.wait->failed = !ok || task.wait->failed;
         if (--task.wait->pending == 0) {
@@ -74,8 +75,8 @@ static THREAD_FUNC xfer_file_worker(void *arg) {
     return 0;
 }
 
-bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
-                    size_t size, bool mark_cold) {
+static bool xfer_file_transfer(XferFileHandle file_handle, uint64_t offset, void *destination,
+                               size_t size, bool mark_cold, bool write) {
     XferFileWait wait = {
         .mutex = mutex_create(),
         .condvar = condvar_create(),
@@ -94,6 +95,7 @@ bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destinati
             .destination = (uint8_t *)destination + done,
             .size = MIN(XFER_FILE_CHUNK_SIZE, size - done),
             .mark_cold = mark_cold,
+            .write = write,
             .wait = &wait,
         };
 
@@ -121,6 +123,16 @@ fail:
     condvar_destroy(wait.condvar);
     mutex_destroy(wait.mutex);
     return ok;
+}
+
+bool xfer_file_read(XferFileHandle file_handle, uint64_t offset, void *destination,
+                    size_t size, bool mark_cold) {
+    return xfer_file_transfer(file_handle, offset, destination, size, mark_cold, false);
+}
+
+SHARED_EXPORT
+bool xfer_file_write(XferFileHandle file_handle, uint64_t offset, void *source, size_t size) {
+    return xfer_file_transfer(file_handle, offset, source, size, false, true);
 }
 
 bool xfer_file_init(void) {

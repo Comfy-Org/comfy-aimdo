@@ -23,6 +23,8 @@ typedef struct ModelVBAR {
     void *lower;
 
     size_t resident_count;
+    uint64_t pageout_size;
+    bool (*pageout_callback)(uint64_t offset, uint64_t size);
 
     ResidentPage residency_map[1]; /* Must be last! */
 } ModelVBAR;
@@ -91,12 +93,25 @@ uint64_t vbars_analyze(void *devctx, bool only_dirty) {
     return (uint64_t)calculated_total_vram;
 }
 
-static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {
+/* -1: writeback failed, 0: retained, 1: freed. */
+static inline int mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {
     ResidentPage *rp = &mv->residency_map[page_nr];
     CUdeviceptr vaddr = mv->vbar + page_nr * VBAR_PAGE_SIZE;
 
     do_free = do_free && rp->handle && (do_unpin || rp->pin_count == 0);
     if (do_free) {
+        if (mv->pageout_callback) {
+            uint64_t offset = page_nr * VBAR_PAGE_SIZE;
+            size_t size = MIN(VBAR_PAGE_SIZE, mv->pageout_size - offset);
+            /* Also cover eviction while malloc-graph synchronization is paused. */
+            if (!CHECK_CU(cuCtxSynchronize())) {
+                return -1;
+            }
+            /* The owner saves complete tensors intersecting this range before unmapping. */
+            if (!mv->pageout_callback(offset, size)) {
+                return -1;
+            }
+        }
         CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
         unmap_workaround(vaddr, VBAR_PAGE_SIZE);
         CHECK_CU(cuMemRelease(rp->handle));
@@ -110,7 +125,7 @@ static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unp
     return do_free;
 }
 
-size_t vbars_free(ssize_t size) {
+bool vbars_free(ssize_t size) {
     size_t pages_needed;
     bool dirty = false;
     bool sync = !malloc_graph_sync_paused();
@@ -119,7 +134,7 @@ size_t vbars_free(ssize_t size) {
     vbars_dirty = true;
 
     if (size <= 0) {
-        return 0;
+        return true;
     }
 
     pages_needed = VBAR_GET_PAGE_NR_UP((size_t)size);
@@ -136,9 +151,11 @@ size_t vbars_free(ssize_t size) {
                 }
                 dirty = true;
             }
-            if (mod1(i, i->watermark - 1, true, false)) {
-                pages_needed--;
+            int freed = mod1(i, i->watermark - 1, true, false);
+            if (freed < 0) {
+                return false;
             }
+            pages_needed -= freed;
         }
     }
 
@@ -146,7 +163,7 @@ size_t vbars_free(ssize_t size) {
         CHECK_CU(cuCtxSynchronize());
     }
 
-    return pages_needed;
+    return true;
 }
 
 static inline size_t move_cursor_to_absent(ModelVBAR *mv, size_t cursor) {
@@ -165,7 +182,7 @@ static inline size_t spend_surplus_on_cursor(ModelVBAR *mv, size_t target, size_
     return cursor;
 }
 
-static void vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
+static bool vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
     size_t cursor = move_cursor_to_absent(mv, 0);
     bool synced = false;
 
@@ -183,7 +200,11 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
                 CHECK_CU(cuCtxSynchronize());
                 synced = true;
             }
-            if (mod1(i, i->watermark - 1, true, false)) {
+            int freed = mod1(i, i->watermark - 1, true, false);
+            if (freed < 0) {
+                return false;
+            }
+            if (freed) {
                 surplus += (ssize_t)VBAR_PAGE_SIZE;
                 cursor = spend_surplus_on_cursor(mv, target, cursor, &surplus);
             }
@@ -193,6 +214,7 @@ static void vbars_free_for_vbar(ModelVBAR *mv, size_t target, ssize_t surplus) {
     if (synced) {
         CHECK_CU(cuCtxSynchronize());
     }
+    return true;
 }
 
 static inline void remove_vbar(ModelVBAR *mv) {
@@ -214,8 +236,10 @@ static inline void insert_vbar_last(ModelVBAR *mv) {
     lowest_priority.higher = mv;
 }
 
+/* The optional callback completes writeback before returning. No VBAR reentry. */
 SHARED_EXPORT
-void *vbar_allocate(void *devctx, uint64_t size, int device) {
+void *vbar_allocate(void *devctx, uint64_t size, int device,
+                    bool (*pageout_callback)(uint64_t, uint64_t)) {
     ModelVBAR *mv;
 
     set_devctx((AimdoContext *)devctx);
@@ -230,12 +254,15 @@ void *vbar_allocate(void *devctx, uint64_t size, int device) {
     if (nr_pages_max < nr_pages) {
         nr_pages = nr_pages_max;
     }
-    size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     if (!(mv = calloc(1, sizeof(*mv) + nr_pages * sizeof(mv->residency_map[0])))) {
         log(CRITICAL, "Host OOM\n");
         return NULL;
     }
+
+    mv->pageout_size = size;
+    mv->pageout_callback = pageout_callback;
+    size = (uint64_t)nr_pages * VBAR_PAGE_SIZE;
 
     /* FIXME: Do I care about alignment? Does Cuda just look after itself? */
     if (!CHECK_CU(cuMemAddressReserve(&mv->vbar, size, 0, 0, 0))) {
@@ -264,7 +291,7 @@ void vbar_set_watermark_limit(void *devctx, void *vbar, uint64_t size) {
 }
 
 SHARED_EXPORT
-void vbar_set_watermark(void *devctx, void *vbar, uint64_t size) {
+bool vbar_set_watermark(void *devctx, void *vbar, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     size_t watermark = VBAR_GET_PAGE_NR_UP(size);
 
@@ -280,11 +307,14 @@ void vbar_set_watermark(void *devctx, void *vbar, uint64_t size) {
     if (watermark < mv->watermark) {
         CHECK_CU(cuCtxSynchronize());
         for (size_t page_nr = watermark; page_nr < mv->watermark; page_nr++) {
-            mod1(mv, page_nr, true, false);
+            if (mod1(mv, page_nr, true, false) < 0) {
+                return false;
+            }
         }
     }
 
     mv->watermark = watermark;
+    return true;
 }
 
 SHARED_EXPORT
@@ -360,7 +390,9 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
      * as the allocator is unreliable as it may not actually be called reliably when you
      * really need to know you have spilled.
      */
-    vbars_free(budget_deficit(0));
+    if (!vbars_free(budget_deficit(0))) {
+        return VBAR_FAULT_ERROR;
+    }
 
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
@@ -378,11 +410,13 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
         }
 
         if (!miss_alloc_checked) {
-            vbars_free_for_vbar(mv, page_end,
+            if (!vbars_free_for_vbar(mv, page_end,
                                 (ssize_t)vram_capacity -
                                 ((ssize_t)(total_vram_usage +
                                            (page_end - page_nr) * VBAR_PAGE_SIZE) +
-                                 (ssize_t)simple_vram_headroom));
+                                 (ssize_t)simple_vram_headroom))) {
+                return VBAR_FAULT_ERROR;
+            }
             miss_alloc_checked = true;
 
             if (page_end > mv->watermark) {
@@ -400,7 +434,9 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
                 return VBAR_FAULT_ERROR;
             }
             log(DEBUG, "VBAR allocator attempt exceeds available VRAM ...\n");
-            vbars_free(VBAR_PAGE_SIZE);
+            if (!vbars_free(VBAR_PAGE_SIZE)) {
+                return VBAR_FAULT_ERROR;
+            }
             if (page_end > mv->watermark) {
                 log(DEBUG, "VBAR allocation cancelled due to backup-free watermark reduction\n");
                 return VBAR_FAULT_OOM;
@@ -427,7 +463,7 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
 }
 
 SHARED_EXPORT
-void vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
+bool vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -445,13 +481,18 @@ void vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
         if (rp->pin_count) {
             rp->pin_count--;
         }
-        mod1(mv, page_nr, page_nr >= mv->watermark, false);
+    }
+    /* Release every consumer pin even if a subsequent writeback fails. */
+    for (uint64_t page_nr = VBAR_GET_PAGE_NR(offset); page_nr < page_end && page_nr < mv->nr_pages; page_nr++) {
+        if (mod1(mv, page_nr, page_nr >= mv->watermark, false) < 0) {
+            return false;
+        }
     }
 
     if (page_end > mv->watermark) {
         CHECK_CU(cuCtxSynchronize());
     }
-
+    return true;
 }
 
 SHARED_EXPORT
@@ -465,6 +506,7 @@ void vbar_free(void *devctx, void *vbar) {
 
     CHECK_CU(cuCtxSynchronize());
 
+    mv->pageout_callback = NULL; /* Destruction discards rather than pages out. */
     for (uint64_t page_nr = 0; page_nr < mv->nr_pages; page_nr++) {
         mod1(mv, page_nr, true, true);
     }
@@ -511,7 +553,7 @@ void vbar_get_residency(void *devctx, void *vbar, uint8_t *out, size_t max_pages
 }
 
 SHARED_EXPORT
-uint64_t vbar_free_memory(void *devctx, void *vbar, uint64_t size) {
+int64_t vbar_free_memory(void *devctx, void *vbar, uint64_t size) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     size_t pages_to_free = VBAR_GET_PAGE_NR_UP(size);
     size_t pages_freed = 0;
@@ -527,13 +569,15 @@ uint64_t vbar_free_memory(void *devctx, void *vbar, uint64_t size) {
         /* In theory we should never have pins here, but
          * respect pins if it really comes up.
          */
-        if (mod1(mv, mv->watermark - 1, true, false)) {
-            pages_to_free--;
-            pages_freed++;
+        int freed = mod1(mv, mv->watermark - 1, true, false);
+        if (freed < 0) {
+            return -1;
         }
+        pages_to_free -= freed;
+        pages_freed += freed;
     }
 
     CHECK_CU(cuCtxSynchronize());
 
-    return (uint64_t)pages_freed * VBAR_PAGE_SIZE;
+    return (int64_t)pages_freed * VBAR_PAGE_SIZE;
 }

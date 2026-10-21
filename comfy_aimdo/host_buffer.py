@@ -44,6 +44,13 @@ if lib is not None:
     ]
     lib.hostbuf_file_reader_read.restype = ctypes.c_bool
 
+    lib.hostbuf_file_writer_write.argtypes = [ctypes.c_int, ctypes.c_uint64, ctypes.c_uint64,
+                                             ctypes.c_uint64, ctypes.c_void_p, ctypes.c_uint64]
+    lib.hostbuf_file_writer_write.restype = ctypes.c_bool
+
+    lib.xfer_file_write.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_size_t]
+    lib.xfer_file_write.restype = ctypes.c_bool
+
     lib.hostbuf_file_reader_cleanup.argtypes = []
 
     lib.hostbuf_register.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64]
@@ -69,6 +76,18 @@ def read_file_to_device(file_obj, file_offset, size, stream, device_ptr, device,
                                         int(file_offset), int(size), int(stream) or None,
                                         int(device_ptr), bool(mark_cold)):
         raise RuntimeError("hostbuf_file_reader_read failed")
+
+
+def write_device_to_file(file_obj, file_offset, size, stream, device_ptr, device):
+    """Write through the bounded staging ring; the source stream and file writes finish before return."""
+    if not lib.hostbuf_file_writer_write(int(device), _file_handle(file_obj),
+                                         int(file_offset), int(size), int(stream) or None, int(device_ptr)):
+        raise RuntimeError("hostbuf_file_writer_write failed")
+
+
+def write_host_to_file(file_obj, file_offset, size, host_ptr):
+    if not lib.xfer_file_write(_file_handle(file_obj), int(file_offset), int(host_ptr), int(size)):
+        raise RuntimeError("xfer_file_write failed")
 
 
 def cleanup_file_reader():

@@ -77,6 +77,7 @@ static const DispatchSymbol dispatch_symbols[] = {
     { (void **)&g_cuda.p_cuMemUnmap, "cuMemUnmap", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemRelease, "cuMemRelease", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuMemcpyHtoDAsync, "cuMemcpyHtoDAsync", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
+    { (void **)&g_cuda.p_cuMemcpyDtoHAsync, "cuMemcpyDtoHAsync", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuEventCreate, "cuEventCreate", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuEventDestroy, "cuEventDestroy", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
     { (void **)&g_cuda.p_cuEventRecord, "cuEventRecord", CU_GET_PROC_ADDRESS_LEGACY_STREAM },
