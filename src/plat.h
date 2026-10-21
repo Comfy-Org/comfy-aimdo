@@ -30,6 +30,9 @@ typedef struct CUstream_st *cudaStream_t;
 #include <stdlib.h>
 #include <assert.h>
 
+/* thread-plat.c */
+void thread_sleep_ms(unsigned ms);
+
 /* control.c */
 bool cuda_budget_deficit(const char **prevailing_deficit_method);
 
@@ -205,7 +208,20 @@ static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
     if (!CHECK_CU_ERROR(err = cuMemMap(vaddr, size, 0, h, 0))) {
         goto fail_mmap;
     }
-    if (!CHECK_CU_ERROR(err = cuMemSetAccess(vaddr, size, &accessDesc, 1))) {
+    /* CUDA can report NOT_READY even with no GPU work outstanding.
+     * This return value is undocumented for cuMemSetAccess. */
+    err = cuMemSetAccess(vaddr, size, &accessDesc, 1);
+    unsigned retries = 0;
+    while (err == CUDA_ERROR_NOT_READY && retries < 5) {
+        thread_sleep_ms(1);
+        retries++;
+        err = cuMemSetAccess(vaddr, size, &accessDesc, 1);
+    }
+    if (retries) {
+        log(DEBUG, "cuMemSetAccess address=%p size=%zu retries=%u result=%d\n",
+            (void *)(uintptr_t)vaddr, size, retries, (int)err);
+    }
+    if (!check_cu_impl(err, "cuMemSetAccess(vaddr, size, &accessDesc, 1)", VVERBOSE, AIMDO_LOG_ERROR)) {
         goto fail_access;
     }
     total_vram_usage += size;

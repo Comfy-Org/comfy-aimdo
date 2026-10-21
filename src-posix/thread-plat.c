@@ -1,6 +1,7 @@
 #include "thread-plat.h"
 
 #include <stdlib.h>
+#include <time.h>
 
 Mutex mutex_create(void) {
     pthread_mutex_t *mutex = malloc(sizeof(*mutex));
@@ -68,4 +69,9 @@ bool thread_create(Thread *thread, ThreadProc proc, void *arg) {
 
 void thread_join(Thread thread) {
     pthread_join(thread, NULL);
+}
+
+void thread_sleep_ms(unsigned ms) {
+    struct timespec delay = {ms / 1000, (ms % 1000) * 1000000L};
+    nanosleep(&delay, NULL);
 }
