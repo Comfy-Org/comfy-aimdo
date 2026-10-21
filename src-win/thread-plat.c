@@ -66,3 +66,7 @@ void thread_join(Thread thread) {
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);
 }
+
+void thread_sleep_ms(unsigned ms) {
+    Sleep(ms);
+}
