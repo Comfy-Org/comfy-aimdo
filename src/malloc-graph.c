@@ -137,7 +137,25 @@ static CUdeviceptr candidate_ptr(MallocGraph *g, Event *candidate) {
            (candidate->type == EV_ALLOC_SMALL ? 1 : MG_PAGE);
 }
 
+/*
+ * A rogue candidate freed before the root pop is not a fatal graph error.
+ *
+ * Candidates are severed from the plan in collect_rogue_candidates() at every
+ * pop and only adopted at the root pop by finalize_rogues()/handoff_rogues().
+ * While a candidate is still linked in g->rogue_candidates, rogue_va() and
+ * rogue_phys() keep its address range out of any newly planned allocation, so
+ * the compiler can keep planning; and a freed candidate is already reported as
+ * ROGUE_HANDOFF_FREED by handoff_rogues() and handled by finalize_rogues().
+ *
+ * Marking the whole graph failed instead poisons it permanently: every later
+ * malloc_graph_alloc/free/pause/push/pop/set_stream returns false and callers
+ * only see RuntimeError("aimdo memory compile error"), with no way to recover
+ * short of destroying the graph (see Comfy-Org/comfy-aimdo#129).
+ *
+ * Build with -DAIMDO_ROGUE_FREE_IS_FATAL to restore the previous behaviour.
+ */
 static bool graph_failed(MallocGraph *g) {
+#ifdef AIMDO_ROGUE_FREE_IS_FATAL
     for (Event *candidate = g->rogue_candidates; candidate;
          candidate = candidate->allocation_previous) {
         if (rogue_candidate_freed(candidate_ptr(g, candidate))) {
@@ -145,6 +163,7 @@ static bool graph_failed(MallocGraph *g) {
             break;
         }
     }
+#endif
     return g->failed;
 }
 
