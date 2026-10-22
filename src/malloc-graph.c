@@ -163,14 +163,6 @@ static bool graph_failed(MallocGraph *g) {
             break;
         }
     }
-#else
-    /* Observe freed candidates only; never poison the graph here. */
-    for (Event *candidate = g->rogue_candidates; candidate;
-         candidate = candidate->allocation_previous) {
-        if (rogue_candidate_freed(candidate_ptr(g, candidate))) {
-            break;
-        }
-    }
 #endif
     return g->failed;
 }
