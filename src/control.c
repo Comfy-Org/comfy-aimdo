@@ -156,9 +156,16 @@ bool cuda_budget_deficit(const char **prevailing_deficit_method) {
 
         deficit_sync = (ssize_t)integrated_ram_headroom - (ssize_t)mem_available;
         *prevailing_deficit_method = "/proc/meminfo (integrated RAM)";
+        /* A BIOS carve-out is not part of MemAvailable, so the device can run out of
+         * memory while RAM is plentiful. Evict for whichever runs out first. */
+        if (CHECK_CU(cuMemGetInfo(&free_vram, &total_vram)) &&
+            (ssize_t)VRAM_HEADROOM - (ssize_t)free_vram > deficit_sync) {
+            deficit_sync = (ssize_t)VRAM_HEADROOM - (ssize_t)free_vram;
+            *prevailing_deficit_method = "cuMemGetInfo (integrated VRAM)";
+        }
         log(DEBUG,
-            "%s: MemAvailable poll available=%zu MB headroom=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
-            __func__, mem_available / M, integrated_ram_headroom / M,
+            "%s: MemAvailable poll available=%zu MB headroom=%zu MB free_vram=%zu MB deficit_sync=%zd MB recorded=%zu MB\n",
+            __func__, mem_available / M, integrated_ram_headroom / M, free_vram / M,
             deficit_sync / (ssize_t)M, total_vram_usage / M);
         log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
         return true;
