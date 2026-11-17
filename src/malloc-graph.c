@@ -448,7 +448,10 @@ static CUresult map_reference(MallocGraph *g, CUdeviceptr address,
     CUresult result = cuMemMap(address, MG_PAGE, 0, physical_page_get(page), 0);
     if (!result) {
         reference->address = address;
-        result = cuMemSetAccess(address, MG_PAGE, &access, 1);
+        result = set_access_settled(address, MG_PAGE, &access);
+        if (result) {
+            settle_before_teardown();
+        }
     }
     if (result) {
         physical_page_unref(reference);
@@ -1270,6 +1273,11 @@ SHARED_EXPORT void malloc_graph_destroy(void *handle) {
         g->state = state->next;
         free(state);
     }
+
+    /* Pages below may still be referenced by queued kernels or graph replays. Unmapping and
+     * releasing them under in-flight work is undefined and, on WDDM, races the OS paging
+     * thread. One synchronize per graph teardown. */
+    CHECK_CU(cuCtxSynchronize());
 
     for (size_t i = 0; i < g->va_count; i++) {
         physical_page_unref(g->mapped_pages[i]);
