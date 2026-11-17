@@ -182,6 +182,45 @@ static inline int check_cu_impl(CUresult res, const char *label, int oom_level, 
 #define CHECK_CU_OOM_ERROR(x) check_cu_impl((x), #x, AIMDO_LOG_ERROR, DEBUG)
 #define CHECK_CU_ERROR(x) check_cu_impl((x), #x, VVERBOSE, AIMDO_LOG_ERROR)
 
+/* thread-plat.c */
+void thread_sleep_ms(unsigned ms);
+
+/* WDDM: cuMemSetAccess on a freshly mapped allocation can return the undocumented
+ * CUDA_ERROR_NOT_READY (600) while Windows is still making the allocation resident
+ * (VidMm page-in on its worker thread). Tearing the mapping down at that moment destroys an
+ * allocation the video memory manager may still be paging in, which matches the
+ * dxgmms2!GetVidMmGlobalAllocFromOwner+0x12 bugcheck (0x7E/0x50) under
+ * VidMmWorkerThreadProc -> PageInOneAllocation -> CommitVirtualAddressRange ->
+ * ExpandLargePagePte. Wait for the allocation to settle instead of tearing it down. */
+#define AIMDO_NOT_READY_MAX_WAIT_MS 2000
+#define AIMDO_TEARDOWN_SETTLE_MS 50
+
+static inline CUresult set_access_settled(CUdeviceptr vaddr, size_t size, const CUmemAccessDesc *desc) {
+    CUresult err = cuMemSetAccess(vaddr, size, desc, 1);
+    unsigned waited = 0, delay = 1;
+
+    while (err == CUDA_ERROR_NOT_READY && waited < AIMDO_NOT_READY_MAX_WAIT_MS) {
+        thread_sleep_ms(delay);
+        waited += delay;
+        if (delay < 16) {
+            delay *= 2;
+        }
+        err = cuMemSetAccess(vaddr, size, desc, 1);
+    }
+    if (waited) {
+        log(WARNING, "cuMemSetAccess NOT_READY: address=%p size=%zuM waited=%ums result=%d\n",
+            (void *)(uintptr_t)vaddr, size / M, waited, (int)err);
+    }
+    return err;
+}
+
+/* Last resort before tearing down a mapping whose access never settled: give the OS paging
+ * thread time to finish with it. No context synchronize here, as this can run inside
+ * stream capture. */
+static inline void settle_before_teardown(void) {
+    thread_sleep_ms(AIMDO_TEARDOWN_SETTLE_MS);
+}
+
 static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
                                      CUmemGenericAllocationHandle *handle) {
     CUmemGenericAllocationHandle h = 0;
@@ -205,7 +244,7 @@ static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
     if (!CHECK_CU_ERROR(err = cuMemMap(vaddr, size, 0, h, 0))) {
         goto fail_mmap;
     }
-    if (!CHECK_CU_ERROR(err = cuMemSetAccess(vaddr, size, &accessDesc, 1))) {
+    if (!CHECK_CU_ERROR(err = set_access_settled(vaddr, size, &accessDesc))) {
         goto fail_access;
     }
     total_vram_usage += size;
@@ -214,6 +253,7 @@ static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
     return CUDA_SUCCESS;
 
 fail_access:
+    settle_before_teardown();
     CHECK_CU_ERROR(cuMemUnmap(vaddr, size));
     unmap_workaround(vaddr, size);
 fail_mmap:
