@@ -124,6 +124,17 @@ def init(implementation: str | None = None, simple_vram_headroom: int | None = N
     lib.get_devctx.argtypes = [ctypes.c_int]
     lib.get_devctx.restype = ctypes.c_void_p
 
+    lib.device_lock_try.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.device_lock_try.restype = ctypes.c_bool
+    lib.device_lock_release.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.device_lock_release.restype = ctypes.c_bool
+    lib.device_lock_set_token.argtypes = [ctypes.c_uint64]
+    lib.device_lock_set_token.restype = ctypes.c_uint64
+    lib.device_operation_begin.argtypes = [ctypes.c_void_p]
+    lib.device_operation_begin.restype = None
+    lib.device_operation_end.argtypes = [ctypes.c_void_p]
+    lib.device_operation_end.restype = None
+
     lib.malloc_graph_create.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
     lib.malloc_graph_create.restype = ctypes.c_void_p
 
@@ -211,6 +222,21 @@ def get_devctx(device_id: int):
     if devctx:
         return devctx
     raise RuntimeError(f"comfy-aimdo device {device_id} is not initialized")
+
+
+def try_device_lock(device_id: int, token: int):
+    """Reserve a device for a nonzero token; False means busy. Not recursive."""
+    return bool(lib.device_lock_try(get_devctx(device_id), token))
+
+
+def release_device_lock(device_id: int, token: int):
+    if not lib.device_lock_release(get_devctx(device_id), token):
+        raise RuntimeError("device lock token does not own an idle device")
+
+
+def set_device_lock_token(token: int):
+    """Authorize this native thread for a reserved operation; return its old token."""
+    return int(lib.device_lock_set_token(token))
 
 def set_simple_vram_headroom(headroom: int):
     """Set the VRAM the simple budget keeps free, in bytes.

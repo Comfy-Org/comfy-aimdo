@@ -1,6 +1,7 @@
 #include "plat.h"
 #include "aimdo-time.h"
 #include "xfer-file.h"
+#include "device-lock.h"
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)
@@ -216,6 +217,7 @@ void cleanup(void) {
         aimdo_wddm_cleanup();
         va_pool_cleanup();
         allocations_cleanup();
+        device_gate_destroy(g_devctx);
 
         free(highest_priority_p); /* FIXME: move the model_vbar. */
     }
@@ -247,7 +249,8 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
         devctx->_hostbuf_file_reader_active = -1;
         set_devctx(devctx);
 
-        if (!allocations_init() ||
+        if (!device_gate_init(devctx) ||
+            !allocations_init() ||
             !va_pool_init() ||
             !CHECK_CU(cuDeviceGet(&dev, cuda_device_ids[i])) ||
             !CHECK_CU(cuDeviceTotalMem(&vram_capacity, dev))) {
