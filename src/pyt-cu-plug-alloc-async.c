@@ -1,5 +1,6 @@
 #include "plat.h"
 #include "malloc-rogue.h"
+#include "device-lock.h"
 
 /* cudaMalloc does not guarantee fragmentation handling as well as cudaMallocAsync,
  * so we reserve a small extra headroom when forcing budget pressure.
@@ -151,8 +152,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
     log(DEBUG, "%s: could not account free at %p\n", __func__, (void *)(uintptr_t)ptr);
 }
 
-int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
-                      CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)) {
+DEVICE_FUNCTION(int, aimdo_cuda_malloc, (CUdeviceptr *devPtr, size_t size, CUresult (*true_cuMemAlloc_v2)(CUdeviceptr*, size_t)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, size, true_cuMemAlloc_v2)) {
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -189,8 +189,7 @@ int aimdo_cuda_malloc(CUdeviceptr *devPtr, size_t size,
     return status;
 }
 
-int aimdo_cuda_free(CUdeviceptr devPtr,
-                    CUresult (*true_cuMemFree_v2)(CUdeviceptr)) {
+DEVICE_FUNCTION(int, aimdo_cuda_free, (CUdeviceptr devPtr, CUresult (*true_cuMemFree_v2)(CUdeviceptr)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, true_cuMemFree_v2)) {
     CUresult status;
 
     if (!devPtr) {
@@ -215,8 +214,7 @@ int aimdo_cuda_free(CUdeviceptr devPtr,
     return status;
 }
 
-int aimdo_cuda_malloc_async(CUdeviceptr *devPtr, size_t size, CUstream hStream,
-                            CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)) {
+DEVICE_FUNCTION(int, aimdo_cuda_malloc_async, (CUdeviceptr *devPtr, size_t size, CUstream hStream, CUresult (*true_cuMemAllocAsync)(CUdeviceptr*, size_t, CUstream)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, size, hStream, true_cuMemAllocAsync)) {
     CUdeviceptr dptr;
     CUresult status = 0;
 
@@ -261,8 +259,7 @@ success:
     return 0;
 }
 
-int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream,
-                          CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
+DEVICE_FUNCTION(int, aimdo_cuda_free_async, (CUdeviceptr devPtr, CUstream hStream, CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, hStream, true_cuMemFreeAsync)) {
     CUresult status;
 
     log(VVERBOSE, "%s (start) ptr=%p\n", __func__, (void *)(uintptr_t)devPtr);
