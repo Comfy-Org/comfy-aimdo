@@ -208,7 +208,7 @@ static inline CUresult three_stooges(CUdeviceptr vaddr, size_t size, int device,
     if (!CHECK_CU_ERROR(err = cuMemSetAccess(vaddr, size, &accessDesc, 1))) {
         goto fail_access;
     }
-    total_vram_usage += size;
+    device_vram_adjust(g_devctx, (int64_t)size);
 
     *handle = h;
     return CUDA_SUCCESS;

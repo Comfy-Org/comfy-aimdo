@@ -166,7 +166,7 @@ DEVICE_FUNCTION(bool, vrambuf_destroy, (void *arg), (arg ? (AimdoContext *)get_d
         CHECK_CU(cuMemRelease(buf->handles[i]));
     }
 
-    total_vram_usage -= buf->allocated;
+    device_vram_adjust(g_devctx, -(int64_t)buf->allocated);
 
 #if defined(__HIP_PLATFORM_AMD__) && defined(_WIN32)
     /* VRAM freed; keep the VA reservation and park it for reuse. */

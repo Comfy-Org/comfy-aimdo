@@ -116,7 +116,7 @@ static inline int mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpi
         CHECK_CU(cuMemUnmap(vaddr, VBAR_PAGE_SIZE));
         unmap_workaround(vaddr, VBAR_PAGE_SIZE);
         CHECK_CU(cuMemRelease(rp->handle));
-        total_vram_usage -= VBAR_PAGE_SIZE;
+        device_vram_adjust(g_devctx, -(int64_t)VBAR_PAGE_SIZE);
         rp->handle = 0;
         mv->resident_count--;
     }

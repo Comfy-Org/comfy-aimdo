@@ -11,6 +11,21 @@ typedef struct DeviceGate {
 
 static _Thread_local uint64_t current_token;
 
+uint64_t device_vram_usage(AimdoContext *context) {
+    DeviceGate *gate = context->_device_gate;
+    mutex_lock(gate->mutex);
+    uint64_t bytes = context->_total_vram_usage;
+    mutex_unlock(gate->mutex);
+    return bytes;
+}
+
+void device_vram_adjust(AimdoContext *context, int64_t delta) {
+    DeviceGate *gate = context->_device_gate;
+    mutex_lock(gate->mutex);
+    context->_total_vram_usage += delta;
+    mutex_unlock(gate->mutex);
+}
+
 bool device_gate_init(AimdoContext *context) {
     DeviceGate *gate = calloc(1, sizeof(*gate));
     if (!gate) {

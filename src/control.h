@@ -71,6 +71,8 @@ static inline void set_devctx(AimdoContext *devctx) {
 
 bool set_devctx_for_device(int device_id);
 SHARED_EXPORT void *get_devctx(int device_id);
+uint64_t device_vram_usage(AimdoContext *context);
+void device_vram_adjust(AimdoContext *context, int64_t delta);
 bool set_devctx_for_current_cuda_device(void);
 
 #define vram_capacity               (g_devctx->_vram_capacity)
@@ -80,7 +82,7 @@ bool set_devctx_for_current_cuda_device(void);
 #define integrated_ram_headroom     (g_devctx->_integrated_ram_headroom)
 #define extra_vram_headroom         (g_devctx->_extra_vram_headroom)
 #define malloc_async_clamp          (g_devctx->_malloc_async_clamp)
-#define total_vram_usage            (g_devctx->_total_vram_usage)
+#define total_vram_usage            device_vram_usage(g_devctx)
 #define total_vram_last_check       (g_devctx->_total_vram_last_check)
 #define deficit_sync                (g_devctx->_deficit_sync)
 #define highest_priority_p          (*(ModelVBAR **)&g_devctx->_highest_priority)

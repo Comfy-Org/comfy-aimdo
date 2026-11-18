@@ -65,7 +65,7 @@ CUresult physical_page_alloc(PhysicalPage **page, size_t bytes, int device) {
     allocation->references = reference;
     *page = reference;
     allocations_lock();
-    total_vram_usage += bytes;
+    device_vram_adjust(g_devctx, (int64_t)bytes);
     allocations_unlock();
     return CUDA_SUCCESS;
 }
@@ -122,7 +122,7 @@ CUresult physical_page_unref(PhysicalPage *page) {
     }
     *entry = page->next;
     if (--page->allocation->refs == 0) {
-        total_vram_usage -= page->allocation->bytes;
+        device_vram_adjust(g_devctx, -(int64_t)page->allocation->bytes);
         free(page->allocation);
     }
     free(page);

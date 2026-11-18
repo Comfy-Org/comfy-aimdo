@@ -112,7 +112,7 @@ static inline void account_alloc(CUdeviceptr ptr, size_t size) {
     SizeEntry *entry;
 
     allocations_lock();
-    total_vram_usage += accounted_alloc_size(size);
+    device_vram_adjust(g_devctx, (int64_t)accounted_alloc_size(size));
 
     entry = (SizeEntry *)malloc(sizeof(*entry));
     if (entry) {
@@ -138,7 +138,7 @@ static inline void account_free(CUdeviceptr ptr, CUstream hStream) {
             *prev = entry->next;
 
             log(VVERBOSE, "Freed: ptr=0x%llx, size=%zuk, stream=%p\n", ptr, entry->size / K, hStream);
-            total_vram_usage -= accounted_alloc_size(entry->size);
+            device_vram_adjust(g_devctx, -(int64_t)accounted_alloc_size(entry->size));
 
             allocations_unlock();
             free(entry);
@@ -189,7 +189,9 @@ DEVICE_INTERNAL_FUNCTION(int, aimdo_cuda_malloc, (CUdeviceptr *devPtr, size_t si
     return status;
 }
 
-DEVICE_INTERNAL_FUNCTION(int, aimdo_cuda_free, (CUdeviceptr devPtr, CUresult (*true_cuMemFree_v2)(CUdeviceptr)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, true_cuMemFree_v2)) {
+/* Frees may run under a PyTorch allocator mutex during tensor destruction.
+ * Waiting here would prevent the lease owner from allocating to finish. */
+int aimdo_cuda_free(CUdeviceptr devPtr, CUresult (*true_cuMemFree_v2)(CUdeviceptr)) {
     CUresult status;
 
     if (!devPtr) {
@@ -259,7 +261,7 @@ success:
     return 0;
 }
 
-DEVICE_INTERNAL_FUNCTION(int, aimdo_cuda_free_async, (CUdeviceptr devPtr, CUstream hStream, CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)), (set_devctx_for_current_cuda_device() ? g_devctx : NULL), (devPtr, hStream, true_cuMemFreeAsync)) {
+int aimdo_cuda_free_async(CUdeviceptr devPtr, CUstream hStream, CUresult (*true_cuMemFreeAsync)(CUdeviceptr, CUstream)) {
     CUresult status;
 
     log(VVERBOSE, "%s (start) ptr=%p\n", __func__, (void *)(uintptr_t)devPtr);
