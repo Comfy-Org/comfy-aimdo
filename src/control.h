@@ -69,7 +69,7 @@ static inline void set_devctx(AimdoContext *devctx) {
 }
 
 bool set_devctx_for_device(int device_id);
-void *get_devctx(int device_id);
+SHARED_EXPORT void *get_devctx(int device_id);
 bool set_devctx_for_current_cuda_device(void);
 
 #define vram_capacity               (g_devctx->_vram_capacity)
