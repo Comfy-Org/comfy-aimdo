@@ -27,6 +27,7 @@ typedef struct HostbufFileReaderSlot {
 
 typedef struct AimdoContext {
     int _device_id;
+    void *_device_gate;
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
     void *_nvml_device;
 #endif
@@ -69,6 +70,7 @@ static inline void set_devctx(AimdoContext *devctx) {
 }
 
 bool set_devctx_for_device(int device_id);
+void *get_devctx(int device_id);
 bool set_devctx_for_current_cuda_device(void);
 
 #define vram_capacity               (g_devctx->_vram_capacity)
