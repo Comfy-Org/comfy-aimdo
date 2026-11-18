@@ -1,4 +1,5 @@
 #include "plat.h"
+#include "device-lock.h"
 
 #define VBAR_PAGE_SIZE (32 << 20)
 
@@ -214,8 +215,7 @@ static inline void insert_vbar_last(ModelVBAR *mv) {
     lowest_priority.higher = mv;
 }
 
-SHARED_EXPORT
-void *vbar_allocate(void *devctx, uint64_t size, int device) {
+DEVICE_FUNCTION(void *, vbar_allocate, (void *devctx, uint64_t size, int device), (AimdoContext *)devctx, (devctx, size, device)) {
     ModelVBAR *mv;
 
     set_devctx((AimdoContext *)devctx);
@@ -253,8 +253,7 @@ void *vbar_allocate(void *devctx, uint64_t size, int device) {
     return mv;
 }
 
-SHARED_EXPORT
-void vbar_set_watermark_limit(void *devctx, void *vbar, uint64_t size) {
+DEVICE_VOID_FUNCTION(vbar_set_watermark_limit, (void *devctx, void *vbar, uint64_t size), (AimdoContext *)devctx, (devctx, vbar, size)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -263,8 +262,7 @@ void vbar_set_watermark_limit(void *devctx, void *vbar, uint64_t size) {
     mv->watermark_limit = VBAR_GET_PAGE_NR_UP(size);
 }
 
-SHARED_EXPORT
-void vbar_set_watermark(void *devctx, void *vbar, uint64_t size) {
+DEVICE_VOID_FUNCTION(vbar_set_watermark, (void *devctx, void *vbar, uint64_t size), (AimdoContext *)devctx, (devctx, vbar, size)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     size_t watermark = VBAR_GET_PAGE_NR_UP(size);
 
@@ -287,8 +285,7 @@ void vbar_set_watermark(void *devctx, void *vbar, uint64_t size) {
     mv->watermark = watermark;
 }
 
-SHARED_EXPORT
-void vbars_reset_watermark_limits(void *devctx) {
+DEVICE_VOID_FUNCTION(vbars_reset_watermark_limits, (void *devctx), (AimdoContext *)devctx, (devctx)) {
     set_devctx((AimdoContext *)devctx);
     one_time_setup();
     log(VERBOSE, "%s\n", __func__);
@@ -298,8 +295,7 @@ void vbars_reset_watermark_limits(void *devctx) {
     }
 }
 
-SHARED_EXPORT
-void vbar_prioritize(void *devctx, void *vbar, uint64_t clamp) {
+DEVICE_VOID_FUNCTION(vbar_prioritize, (void *devctx, void *vbar, uint64_t clamp), (AimdoContext *)devctx, (devctx, vbar, clamp)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -316,8 +312,7 @@ void vbar_prioritize(void *devctx, void *vbar, uint64_t clamp) {
     mv->watermark = mv->nr_pages;
 }
 
-SHARED_EXPORT
-void vbar_deprioritize(void *devctx, void *vbar) {
+DEVICE_VOID_FUNCTION(vbar_deprioritize, (void *devctx, void *vbar), (AimdoContext *)devctx, (devctx, vbar)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -342,8 +337,7 @@ uint64_t vbar_get(void *devctx, void *vbar) {
 #define VBAR_FAULT_OOM               1
 #define VBAR_FAULT_ERROR             2
 
-SHARED_EXPORT
-int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) {
+DEVICE_FUNCTION(int, vbar_fault, (void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_t *signature), (AimdoContext *)devctx, (devctx, vbar, offset, size, signature)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     int ret = VBAR_FAULT_SUCCESS;
     size_t signature_index = 0;
@@ -426,8 +420,7 @@ int vbar_fault(void *devctx, void *vbar, uint64_t offset, uint64_t size, uint32_
     return ret;
 }
 
-SHARED_EXPORT
-void vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
+DEVICE_VOID_FUNCTION(vbar_unpin, (void *devctx, void *vbar, uint64_t offset, uint64_t size), (AimdoContext *)devctx, (devctx, vbar, offset, size)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -454,8 +447,7 @@ void vbar_unpin(void *devctx, void *vbar, uint64_t offset, uint64_t size) {
 
 }
 
-SHARED_EXPORT
-void vbar_free(void *devctx, void *vbar) {
+DEVICE_VOID_FUNCTION(vbar_free, (void *devctx, void *vbar), (AimdoContext *)devctx, (devctx, vbar)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     set_devctx((AimdoContext *)devctx);
@@ -510,8 +502,7 @@ void vbar_get_residency(void *devctx, void *vbar, uint8_t *out, size_t max_pages
     }
 }
 
-SHARED_EXPORT
-uint64_t vbar_free_memory(void *devctx, void *vbar, uint64_t size) {
+DEVICE_FUNCTION(uint64_t, vbar_free_memory, (void *devctx, void *vbar, uint64_t size), (AimdoContext *)devctx, (devctx, vbar, size)) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
     size_t pages_to_free = VBAR_GET_PAGE_NR_UP(size);
     size_t pages_freed = 0;

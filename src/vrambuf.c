@@ -1,5 +1,6 @@
 #include "vrambuf.h"
 #include "thread-plat.h"
+#include "device-lock.h"
 
 #if defined(__HIP_PLATFORM_AMD__) && !defined(_WIN32)
 #  define VRAM_CHUNK_SIZE      CUDA_PAGE_SIZE
@@ -44,8 +45,7 @@ void va_pool_cleanup(void) {
 }
 #endif
 
-SHARED_EXPORT
-void *vrambuf_create(int device, size_t max_size) {
+DEVICE_FUNCTION(void *, vrambuf_create, (int device, size_t max_size), (AimdoContext *)get_devctx(device), (device, max_size)) {
     VramBuffer *buf;
 
     if (!set_devctx_for_device(device)) {
@@ -84,8 +84,7 @@ void *vrambuf_create(int device, size_t max_size) {
     return (void *)buf;
 }
 
-SHARED_EXPORT
-bool vrambuf_grow(void *arg, size_t required_size) {
+DEVICE_FUNCTION(bool, vrambuf_grow, (void *arg, size_t required_size), (arg ? (AimdoContext *)get_devctx(((VramBuffer *)arg)->device) : NULL), (arg, required_size)) {
     VramBuffer *buf = (VramBuffer *)arg;
     size_t grow_to;
     CUmemGenericAllocationHandle handle;
@@ -146,8 +145,7 @@ CUdeviceptr vrambuf_get(void *arg) {
     return buf->base_ptr;
 }
 
-SHARED_EXPORT
-bool vrambuf_destroy(void *arg) {
+DEVICE_FUNCTION(bool, vrambuf_destroy, (void *arg), (arg ? (AimdoContext *)get_devctx(((VramBuffer *)arg)->device) : NULL), (arg)) {
     VramBuffer *buf = (VramBuffer *)arg;
     size_t i;
 

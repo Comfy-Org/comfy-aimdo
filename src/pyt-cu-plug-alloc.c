@@ -1,5 +1,6 @@
 #include "plat.h"
 #include "vrambuf.h"
+#include "device-lock.h"
 
 #define VMM_HASH_SHIFT  21
 
@@ -37,8 +38,7 @@ void allocations_analyze(bool only_dirty) {
     log(DEBUG, "%d Active Allocations for a total of %7zu MB\n", count, total_size / M);
 }
 
-SHARED_EXPORT
-void *alloc_fn(size_t size, int device, cudaStream_t stream) {
+DEVICE_FUNCTION(void *, alloc_fn, (size_t size, int device, cudaStream_t stream), (AimdoContext *)get_devctx(device), (size, device, stream)) {
     VramBuffer *entry;
 
     log(VERBOSE, "%s (start): size=%zuk, device=%d\n", __func__, size / K, device);
@@ -67,8 +67,7 @@ void *alloc_fn(size_t size, int device, cudaStream_t stream) {
     return (void *)vrambuf_get(entry);
 }
 
-SHARED_EXPORT
-void free_fn(void* ptr, size_t size, int device, cudaStream_t stream) {
+DEVICE_VOID_FUNCTION(free_fn, (void* ptr, size_t size, int device, cudaStream_t stream), (AimdoContext *)get_devctx(device), (ptr, size, device, stream)) {
     log_shot(DEBUG, "Pytorch is freeing VRAM ...\n");
     log(VERBOSE, "%s (start) ptr=%p size=%zuk, device=%d\n", __func__, ptr, size / K, device);
     if (ptr == NULL || !set_devctx_for_device(device)) {
