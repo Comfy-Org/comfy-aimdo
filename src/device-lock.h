@@ -17,8 +17,10 @@ SHARED_EXPORT void device_operation_end(AimdoContext *context);
     } \
     static result_type name##_unlocked parameters
 
-#define DEVICE_FUNCTION(...) DEVICE_FUNCTION_IMPL(SHARED_EXPORT, __VA_ARGS__)
-#define DEVICE_INTERNAL_FUNCTION(...) DEVICE_FUNCTION_IMPL(, __VA_ARGS__)
+#define DEVICE_FUNCTION(result_type, name, parameters, context, arguments) \
+    DEVICE_FUNCTION_IMPL(SHARED_EXPORT, result_type, name, parameters, context, arguments)
+#define DEVICE_INTERNAL_FUNCTION(result_type, name, parameters, context, arguments) \
+    DEVICE_FUNCTION_IMPL(, result_type, name, parameters, context, arguments)
 
 #define DEVICE_VOID_FUNCTION(name, parameters, context, arguments) \
     static void name##_unlocked parameters; \
