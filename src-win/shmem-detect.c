@@ -151,7 +151,7 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
 {
     DXGI_QUERY_VIDEO_MEMORY_INFO info;
     uint64_t effective_budget = vram_capacity;
-    uint64_t usage = total_vram_usage;
+    uint64_t usage;
     size_t free_vram = 0, total_vram = 0;
     bool budget_queried = false;
     bool used_nvml = false;
@@ -162,7 +162,7 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
         return true;
     }
     wddm_timestamp_last_check = now;
-    total_vram_last_check = total_vram_usage;
+    usage = total_vram_last_check = total_vram_usage;
 
     *prevailing_deficit_method = "Physical Capacity (Fallback)";
 
