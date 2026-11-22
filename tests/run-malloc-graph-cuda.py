@@ -5,6 +5,7 @@ import sys
 
 
 TESTS = (
+    "malloc-graph-stream-errors.py",
     "malloc-graph-cuda.py",
     "malloc-graph-nested-cuda.py",
     "malloc-graph-iterate-cuda.py",
