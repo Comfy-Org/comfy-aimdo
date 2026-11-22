@@ -44,7 +44,11 @@ class MallocGraph:
         self._stream = stream
         try:
             yield
-        finally:
+        except BaseException:
+            if control.lib.malloc_graph_set_stream(self._handle, ctypes.c_void_p(previous.cuda_stream)):
+                self._stream = previous
+            raise
+        else:
             self._call(control.lib.malloc_graph_set_stream, ctypes.c_void_p(previous.cuda_stream))
             self._stream = previous
 
