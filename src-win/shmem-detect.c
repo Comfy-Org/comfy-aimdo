@@ -30,6 +30,7 @@ bool aimdo_wddm_init(CUdevice dev)
     factory = NULL;
     adapter = NULL;
     adapter_name[0] = '\0';
+    dedicated_vram = 0;
     if (g_wddm_adapter) {
         g_wddm_adapter->lpVtbl->Release(g_wddm_adapter);
         g_wddm_adapter = NULL;
@@ -97,6 +98,7 @@ bool aimdo_wddm_init(CUdevice dev)
                                      sizeof(adapter_name), NULL, NULL)) {
                 strcpy(adapter_name, "<unknown>");
             }
+            dedicated_vram = desc.DedicatedVideoMemory;
 
             if (FAILED(adapter->lpVtbl->QueryInterface(adapter, &IID_IDXGIAdapter3, (void **)&g_wddm_adapter))) {
                 adapter->lpVtbl->Release(adapter);
@@ -146,6 +148,38 @@ fail:
 #define WDDM_BUDGET_HEADROOM (512 * 1024 * 1024)
 #define CUDA_BUDGET_HEADROOM (192 * 1024 * 1024)
 #define NVML_BUDGET_HEADROOM (512 * 1024 * 1024)
+
+/* An integrated GPU takes whatever it uses beyond its dedicated memory from
+ * system RAM, and neither the WDDM budget nor the device free memory figure
+ * says how much RAM is left. Evicting only gives RAM back for what is held
+ * beyond the dedicated memory, so the deficit is capped at that amount.
+ */
+static void integrated_ram_deficit(const char **prevailing_deficit_method)
+{
+    MEMORYSTATUSEX mem_status;
+    ssize_t deficit_ram, spill;
+
+    mem_status.dwLength = sizeof(mem_status);
+    if (!GlobalMemoryStatusEx(&mem_status)) {
+        return;
+    }
+
+    deficit_ram = (ssize_t)integrated_ram_headroom - (ssize_t)mem_status.ullAvailPhys;
+    spill = (ssize_t)total_vram_last_check - (ssize_t)dedicated_vram;
+    if (deficit_ram > spill) {
+        deficit_ram = spill;
+    }
+
+    log(DEBUG,
+        "%s: available RAM=%zu MB headroom=%zu MB dedicated=%zu MB deficit_ram=%zd MB\n",
+        __func__, (size_t)(mem_status.ullAvailPhys / M), (size_t)(integrated_ram_headroom / M),
+        (size_t)(dedicated_vram / M), deficit_ram / (ssize_t)M);
+
+    if (deficit_ram > deficit_sync) {
+        deficit_sync = deficit_ram;
+        *prevailing_deficit_method = "Available RAM (integrated)";
+    }
+}
 
 bool poll_budget_deficit(const char **prevailing_deficit_method)
 {
@@ -216,6 +250,10 @@ bool poll_budget_deficit(const char **prevailing_deficit_method)
             deficit_sync = deficit_cuda;
             *prevailing_deficit_method = used_nvml ? "NVML (Windows)" : "cuMemGetInfo (Windows)";
         }
+    }
+
+    if (integrated_device) {
+        integrated_ram_deficit(prevailing_deficit_method);
     }
 
     log(DEBUG, "%s: prevailing method %s\n", __func__, *prevailing_deficit_method);
