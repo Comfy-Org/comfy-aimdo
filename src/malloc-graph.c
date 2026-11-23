@@ -590,7 +590,9 @@ static void scrub_rogue_snapshots(MallocGraph *g, Event *event) {
 
 static bool handoff_rogues(MallocGraph *g) {
     g->handoff_attempted = true;
-    if (cuCtxSynchronize()) {
+    CUresult status = cuCtxSynchronize();
+    if (status) {
+        check_cu_impl(status, "malloc graph rogue handoff synchronization", AIMDO_LOG_ERROR, AIMDO_LOG_ERROR);
         g->failed = true;
         return false;
     }
@@ -645,7 +647,9 @@ static bool handoff_rogues(MallocGraph *g) {
     }
     free(pages);
 
-    if (freed && cuCtxSynchronize()) {
+    status = freed ? cuCtxSynchronize() : CUDA_SUCCESS;
+    if (status) {
+        check_cu_impl(status, "malloc graph freed rogue synchronization", AIMDO_LOG_ERROR, AIMDO_LOG_ERROR);
         g->failed = true;
         return false;
     }
@@ -666,6 +670,7 @@ static bool abort_graph(MallocGraph *g) {
         return true;
     }
     if (g->handoff_attempted) {
+        log(AIMDO_LOG_ERROR, "malloc graph abort: rogue handoff already attempted\n");
         return false;
     }
     g->handoff_attempted = true;
@@ -674,6 +679,7 @@ static bool abort_graph(MallocGraph *g) {
     for (State *state = top; state; state = state->next) {
         g->state = state;
         if (!materialize(g, state->cursor) || !collect_rogue_candidates(g)) {
+            log(AIMDO_LOG_ERROR, "malloc graph abort: cannot collect live allocations at depth %u\n", state->depth);
             g->state = top;
             active_graph = NULL;
             return false;
