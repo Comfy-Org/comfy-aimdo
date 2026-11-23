@@ -591,6 +591,10 @@ static void scrub_rogue_snapshots(MallocGraph *g, Event *event) {
 static bool handoff_rogues(MallocGraph *g) {
     g->handoff_attempted = true;
     CUresult status = cuCtxSynchronize();
+    if (status == CUDA_ERROR_OUT_OF_MEMORY) {
+        status = cuCtxSynchronize();
+        log(INFO, "malloc graph rogue handoff: synchronization after OOM returned %d\n", status);
+    }
     if (status) {
         check_cu_impl(status, "malloc graph rogue handoff synchronization", AIMDO_LOG_ERROR, AIMDO_LOG_ERROR);
         g->failed = true;
