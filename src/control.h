@@ -59,6 +59,7 @@ typedef struct AimdoContext {
     void *_wddm_adapter; /* IDXGIAdapter3* */
     void *_dxcore_adapter; /* IDXCoreAdapter* */
     uint64_t _wddm_timestamp_last_check;
+    uint64_t _dedicated_vram; /* 0 when unknown */
 #endif
 } AimdoContext;
 
@@ -99,6 +100,7 @@ bool set_devctx_for_current_cuda_device(void);
 #define g_wddm_adapter              (*(IDXGIAdapter3 **)&g_devctx->_wddm_adapter)
 #define g_dxcore_adapter            (*(IDXCoreAdapter **)&g_devctx->_dxcore_adapter)
 #define wddm_timestamp_last_check   (g_devctx->_wddm_timestamp_last_check)
+#define dedicated_vram              (g_devctx->_dedicated_vram)
 #endif
 #define control_timestamp_last_check (g_devctx->_control_timestamp_last_check)
 

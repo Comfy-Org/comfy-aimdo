@@ -2,10 +2,8 @@
 #include "aimdo-time.h"
 #include "xfer-file.h"
 
-#if !defined(_WIN32) && !defined(_WIN64)
 #define INTEGRATED_RAM_HEADROOM_MIN (2ULL * G)
 #define INTEGRATED_RAM_HEADROOM_MAX (8ULL * G)
-#define INTEGRATED_SIMPLE_ONLY_DEFICIT (-(ssize_t)(1ULL << 60))
 
 static size_t calculate_integrated_ram_headroom(size_t total_bytes) {
     size_t headroom = total_bytes / 16;
@@ -26,6 +24,9 @@ static bool is_integrated_cuda_device(CUdevice dev) {
     return CHECK_CU(cuDeviceGetAttribute(&integrated, CU_DEVICE_ATTRIBUTE_INTEGRATED, dev)) &&
            integrated;
 }
+
+#if !defined(_WIN32) && !defined(_WIN64)
+#define INTEGRATED_SIMPLE_ONLY_DEFICIT (-(ssize_t)(1ULL << 60))
 
 static bool read_mem_available_bytes(size_t *mem_available_bytes) {
     char line[256];
@@ -254,14 +255,12 @@ bool init(const int *cuda_device_ids, const uint64_t *extra_vram_headrooms, size
             goto fail;
         }
 
-#if !defined(_WIN32) && !defined(_WIN64)
         devctx->_integrated_device = is_integrated_cuda_device(dev);
         if (devctx->_integrated_device) {
             devctx->_integrated_ram_headroom = calculate_integrated_ram_headroom(vram_capacity);
-            log(INFO, "comfy-aimdo integrated Linux GPU RAM headroom: %zu MB\n",
+            log(INFO, "comfy-aimdo integrated GPU RAM headroom: %zu MB\n",
                 integrated_ram_headroom / M);
         }
-#endif
 
 #if (defined(_WIN32) || defined(_WIN64)) && defined(AIMDO_CUDA)
         if (!integrated_device && nvml_pressure) {
