@@ -31,3 +31,4 @@ void condvar_destroy(CondVar condvar);
 
 bool thread_create(Thread *thread, ThreadProc proc, void *arg);
 void thread_join(Thread thread);
+void thread_sleep_ms(unsigned ms);
