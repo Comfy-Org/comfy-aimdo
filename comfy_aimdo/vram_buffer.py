@@ -4,12 +4,6 @@ from . import control
 
 lib = control.lib
 
-
-def _growth_chunk_size():
-    lib_name = str(getattr(lib, "_name", "")).lower()
-    return 2 * 1024**2 if "rocm" in lib_name else 16 * 1024**2
-
-
 if lib is not None:
     lib.vrambuf_create.argtypes = [ctypes.c_int, ctypes.c_size_t]
     lib.vrambuf_create.restype = ctypes.c_void_p
@@ -35,7 +29,7 @@ class VRAMBuffer:
 
         self.base_addr = lib.vrambuf_get(self._ptr)
         self._allocated = 0
-        self._chunk_size = _growth_chunk_size()
+        self._chunk_size = 16 * 1024**2
 
     def size(self):
         return self._allocated
